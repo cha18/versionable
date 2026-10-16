@@ -13,7 +13,7 @@ pub struct Track {
     pub clips: HashMap<u32, Clip>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum TrackKind {
     Midi,
@@ -22,7 +22,7 @@ pub enum TrackKind {
     Group,
 }
 
-#[derive(Serialize, PartialEq, Debug)]
+#[derive(Serialize, PartialEq, Debug, Clone)]
 pub struct Clip {
     pub start: f64,
     pub end: f64,
