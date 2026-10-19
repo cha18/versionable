@@ -1,10 +1,8 @@
 use crate::model::*;
 use anyhow;
 use flate2::read::GzDecoder;
-use std::arch::aarch64::float32x2_t;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io;
 use std::io::prelude::*;
 use std::path::Path;
 

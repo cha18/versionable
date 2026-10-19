@@ -1,7 +1,5 @@
-use pretty_assertions::assert_eq;
 use std::fs;
-use std::path::{self, Path};
-use versionable_core::parse;
+use std::path::Path;
 use versionable_core::{diff::diff, parse::parse_als};
 
 #[test]

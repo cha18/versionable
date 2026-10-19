@@ -1,11 +1,6 @@
-use crate::{
-    diff::Status::{Modified, Unchanged},
-    model::*,
-    parse::parse_als,
-};
+use crate::model::*;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet, hash_set::Difference};
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
