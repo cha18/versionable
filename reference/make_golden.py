@@ -63,19 +63,42 @@ def parse(als_path):
     return tracks
 
 
+def same_shape(b, a):
+    """Same clip content at a different position: Ableton gives dragged clips a new Id."""
+    return (b["name"] == a["name"] and b["color"] == a["color"]
+            and abs((b["end"] - b["start"]) - (a["end"] - a["start"])) < 1e-6  # float noise
+            and b["loop_start"] == a["loop_start"] and b["loop_end"] == a["loop_end"])
+
+
 def diff_clips(before, after, summary):
     out = []
-    for cid in before.keys() | after.keys():
-        b, a = before.get(cid), after.get(cid)
-        if a is None:
-            status, changed = "removed", []
-        elif b is None:
-            status, changed = "added", []
-        else:
-            changed = [f for f in CLIP_FIELDS if b[f] != a[f]]
-            status = "modified" if changed else "unchanged"
+    for cid in before.keys() & after.keys():
+        b, a = before[cid], after[cid]
+        changed = [f for f in CLIP_FIELDS if b[f] != a[f]]
+        status = "modified" if changed else "unchanged"
         summary["clips_" + status] += 1
         out.append({"id": cid, "status": status, "before": b, "after": a, "changed": changed})
+
+    # Move detection: pair each removed clip (ascending id) with the first unpaired
+    # added clip (ascending id) of the same shape; report the pair as one modified clip
+    # under the NEW id.
+    removed = sorted(before.keys() - after.keys())
+    added = sorted(after.keys() - before.keys())
+    for rid in removed:
+        b = before[rid]
+        match = next((aid for aid in added if same_shape(b, after[aid])), None)
+        if match is None:
+            summary["clips_removed"] += 1
+            out.append({"id": rid, "status": "removed", "before": b, "after": None, "changed": []})
+        else:
+            added.remove(match)
+            a = after[match]
+            summary["clips_modified"] += 1
+            out.append({"id": match, "status": "modified", "before": b, "after": a,
+                        "changed": [f for f in CLIP_FIELDS if b[f] != a[f]]})
+    for aid in added:
+        summary["clips_added"] += 1
+        out.append({"id": aid, "status": "added", "before": None, "after": after[aid], "changed": []})
     # sort by start time (after if present, else before), then numeric id
     out.sort(key=lambda c: ((c["after"] or c["before"])["start"], int(c["id"])))
     return out

@@ -52,6 +52,32 @@ pub struct Diff {
     pub tracks: Vec<DiffTrack>,
 }
 
+fn same_shape(a: &Clip, b: &Clip) -> bool {
+    a.name == b.name
+        && a.color == b.color
+        && a.loop_start == b.loop_start
+        && a.loop_end == b.loop_end
+        && ((a.end - a.start) - (b.end - b.start)).abs() < 1e-6
+}
+
+fn get_changes(a: &Clip, b: &Clip) -> Vec<String> {
+    let checks = [
+        ("start", a.start != b.start),
+        ("end", a.end != b.end),
+        ("name", a.name != b.name),
+        ("color", a.color != b.color),
+        ("loop_start", a.loop_start != b.loop_start),
+        ("loop_end", a.loop_end != b.loop_end),
+    ];
+    let changed: Vec<String> = checks
+        .into_iter()
+        .filter(|(_, changed)| *changed)
+        .map(|(name, _)| name.to_string())
+        .collect();
+
+    changed
+}
+
 pub fn diff_clips(
     old: &HashMap<u32, Clip>,
     new: &HashMap<u32, Clip>,
@@ -60,24 +86,12 @@ pub fn diff_clips(
     let mut diffclips = Vec::new();
     let old_clips = old.keys().collect::<HashSet<&u32>>();
     let new_clips = new.keys().collect::<HashSet<&u32>>();
-    let shared = old_clips.intersection(&new_clips);
+    let shared: Vec<u32> = old_clips.intersection(&new_clips).map(|id| **id).collect();
     for clip_id in shared {
-        let a = &old[*clip_id];
-        let b = &new[*clip_id];
-        let checks = [
-            ("start", a.start != b.start),
-            ("end", a.end != b.end),
-            ("name", a.name != b.name),
-            ("color", a.color != b.color),
-            ("loop_start", a.loop_start != b.loop_start),
-            ("loop_end", a.loop_end != b.loop_end),
-        ];
-        let changed: Vec<String> = checks
-            .into_iter()
-            .filter(|(_, changed)| *changed)
-            .map(|(name, _)| name.to_string())
-            .collect();
+        let a = &old[&clip_id];
+        let b = &new[&clip_id];
 
+        let changed = get_changes(a, b);
         let status = if changed.is_empty() {
             summary.clips_unchanged += 1;
             Status::Unchanged
@@ -87,34 +101,61 @@ pub fn diff_clips(
         };
 
         diffclips.push(DiffClip {
-            id: **clip_id,
+            id: clip_id.clone(),
             status: status,
-            before: old.get(*clip_id).cloned(),
-            after: new.get(*clip_id).cloned(),
+            before: old.get(&clip_id).cloned(),
+            after: new.get(&clip_id).cloned(),
             changed: changed,
         })
     }
 
-    for clip_id in old_clips.difference(&new_clips) {
-        diffclips.push(DiffClip {
-            id: **clip_id,
-            status: Status::Removed,
-            before: old.get(*clip_id).cloned(),
-            after: None,
-            changed: vec![],
-        });
-        summary.clips_removed += 1;
+    // below, essentially we check whether the removed clips have shared metadata of another clip that was considered "added", if it does then it is not actually added or removed, it is just modified so we diffclip it as modified.
+    // if it is not in added, it is definitely removed, so we diffclip it as that. then we look at the rest in added and those are definitely added because we removed all the broken cases where it is in both removed AND added beforehand.
+
+    let mut added: Vec<u32> = new_clips.difference(&old_clips).map(|id| **id).collect();
+    let mut removed: Vec<u32> = old_clips.difference(&new_clips).map(|id| **id).collect();
+    added.sort();
+    removed.sort();
+
+    for rid in removed {
+        let b = &old[&rid];
+        match added.iter().position(|aid| same_shape(b, &new[aid])) {
+            Some(ix) => {
+                let aid = added.remove(ix);
+                let a = &new[&aid];
+                summary.clips_modified += 1;
+                let changed = get_changes(a, b);
+                diffclips.push(DiffClip {
+                    id: aid,
+                    status: Status::Modified,
+                    before: Some(b.clone()),
+                    after: Some(a.clone()),
+                    changed: changed,
+                })
+            }
+            None => {
+                summary.clips_removed += 1;
+                diffclips.push(DiffClip {
+                    id: rid,
+                    status: Status::Removed,
+                    before: Some(b.clone()),
+                    after: None,
+                    changed: vec![],
+                });
+            }
+        }
     }
 
-    for clip_id in new_clips.difference(&old_clips) {
+    for aid in added {
+        // whatever wasn't crossed off
+        summary.clips_added += 1;
         diffclips.push(DiffClip {
-            id: **clip_id,
+            id: aid,
             status: Status::Added,
             before: None,
-            after: new.get(*clip_id).cloned(),
+            after: Some(new[&aid].clone()),
             changed: vec![],
         });
-        summary.clips_added += 1;
     }
 
     diffclips.sort_by(|x, y| {

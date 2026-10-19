@@ -1,0 +1,175 @@
+{
+  "summary": {
+    "tracks_added": 1,
+    "tracks_removed": 0,
+    "tracks_modified": 6,
+    "clips_added": 0,
+    "clips_removed": 0,
+    "clips_modified": 1,
+    "clips_unchanged": 3
+  },
+  "tracks": [
+    {
+      "id": 19,
+      "name": "basses",
+      "kind": "group",
+      "group_id": null,
+      "status": "added",
+      "clips": []
+    },
+    {
+      "id": 12,
+      "name": "2-Basic Analog Bass",
+      "kind": "midi",
+      "group_id": 19,
+      "status": "modified",
+      "clips": [
+        {
+          "id": 9,
+          "status": "unchanged",
+          "before": {
+            "start": 0.0,
+            "end": 32.0,
+            "name": "Basic Analog Bass",
+            "color": 24,
+            "loop_start": 0.0,
+            "loop_end": 32.0
+          },
+          "after": {
+            "start": 0.0,
+            "end": 32.0,
+            "name": "Basic Analog Bass",
+            "color": 24,
+            "loop_start": 0.0,
+            "loop_end": 32.0
+          },
+          "changed": []
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "3-Saw Complex Bass",
+      "kind": "midi",
+      "group_id": 19,
+      "status": "modified",
+      "clips": [
+        {
+          "id": 1,
+          "status": "unchanged",
+          "before": {
+            "start": 0.0,
+            "end": 31.95733329170829,
+            "name": "Saw Complex Bass",
+            "color": 11,
+            "loop_start": 0.0,
+            "loop_end": 31.95733329170829
+          },
+          "after": {
+            "start": 0.0,
+            "end": 31.95733329170829,
+            "name": "Saw Complex Bass",
+            "color": 11,
+            "loop_start": 0.0,
+            "loop_end": 31.95733329170829
+          },
+          "changed": []
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "4-Audio",
+      "kind": "audio",
+      "group_id": null,
+      "status": "modified",
+      "clips": []
+    },
+    {
+      "id": 14,
+      "name": "5-Audio",
+      "kind": "audio",
+      "group_id": null,
+      "status": "modified",
+      "clips": []
+    },
+    {
+      "id": 15,
+      "name": "6-Badass Lead",
+      "kind": "midi",
+      "group_id": null,
+      "status": "modified",
+      "clips": [
+        {
+          "id": 1,
+          "status": "modified",
+          "before": {
+            "start": 0.0,
+            "end": 32.0,
+            "name": "Badass Lead 2",
+            "color": 2,
+            "loop_start": 0.0,
+            "loop_end": 32.0
+          },
+          "after": {
+            "start": 0.0,
+            "end": 32.0,
+            "name": "Badass Lead 2",
+            "color": 4,
+            "loop_start": 0.0,
+            "loop_end": 32.0
+          },
+          "changed": [
+            "color"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "7-Corvaire Kit",
+      "kind": "midi",
+      "group_id": null,
+      "status": "modified",
+      "clips": [
+        {
+          "id": 1,
+          "status": "unchanged",
+          "before": {
+            "start": 0.0,
+            "end": 31.978666645854148,
+            "name": "Corvaire Kit 2",
+            "color": 1,
+            "loop_start": 0.0,
+            "loop_end": 31.978666645854148
+          },
+          "after": {
+            "start": 0.0,
+            "end": 31.978666645854148,
+            "name": "Corvaire Kit 2",
+            "color": 1,
+            "loop_start": 0.0,
+            "loop_end": 31.978666645854148
+          },
+          "changed": []
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "A-Reverb",
+      "kind": "return",
+      "group_id": null,
+      "status": "unchanged",
+      "clips": []
+    },
+    {
+      "id": 3,
+      "name": "B-Delay",
+      "kind": "return",
+      "group_id": null,
+      "status": "unchanged",
+      "clips": []
+    }
+  ]
+}

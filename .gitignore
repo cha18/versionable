@@ -2,3 +2,6 @@
 target/
 node_modules/
 *.xml
+fixtures/demo
+fixtures/*/Backup/
+fixtures/*/Ableton Project Info/
