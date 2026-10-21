@@ -1,5 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
+const { listen } = window.__TAURI__.event;
 
 const listEl = document.querySelector("#project-list");
 const errorEl = document.querySelector("#error");
@@ -82,11 +83,71 @@ function render(projects) {
 
 function select(path) {
   selectedPath = path;
+  renderHistory();
+}
+
+function formatTime(ms) {
+  const date = new Date(ms);
+  const today = new Date();
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === today.toDateString()) return `Today ${time}`;
+  return `${date.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
+}
+
+async function renderHistory() {
   detailEl.innerHTML = "";
-  const p = document.createElement("p");
-  p.className = "placeholder";
-  p.textContent = path ? fileName(path) : "Select a project";
-  detailEl.appendChild(p);
+  if (!selectedPath) {
+    const p = document.createElement("p");
+    p.className = "placeholder";
+    p.textContent = "Select a project";
+    detailEl.appendChild(p);
+    return;
+  }
+
+  const history = (await call("get_history", { path: selectedPath })) ?? [];
+
+  const header = document.createElement("header");
+  header.className = "detail-header";
+  const title = document.createElement("h2");
+  title.textContent = fileName(selectedPath);
+  const count = document.createElement("span");
+  count.className = "muted";
+  count.textContent = `${history.length} save${history.length === 1 ? "" : "s"}`;
+  header.append(title, count);
+
+  const list = document.createElement("ol");
+  list.className = "history";
+
+  if (history.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No saves recorded yet. Save the set in Ableton.";
+    list.appendChild(empty);
+  }
+
+  // Newest first
+  [...history].reverse().forEach((entry, i) => {
+    const item = document.createElement("li");
+    item.className = "entry" + (entry.commit ? " committed" : "") + (i === 0 ? " latest" : "");
+
+    const dot = document.createElement("span");
+    dot.className = "dot";
+
+    const body = document.createElement("div");
+    body.className = "entry-body";
+    const label = document.createElement("span");
+    label.className = "entry-label";
+    label.textContent = entry.commit ? entry.commit.msg : "Autosave";
+    const meta = document.createElement("span");
+    meta.className = "entry-meta";
+    meta.textContent = `${formatTime(entry.created_at)} · ${entry.hash.slice(0, 7)}`;
+    body.append(label, meta);
+
+    item.append(dot, body);
+    list.appendChild(item);
+  });
+
+  detailEl.append(header, list);
 }
 
 async function addProject() {
@@ -96,8 +157,15 @@ async function addProject() {
     filters: [{ name: "Ableton Live Set", extensions: ["als"] }],
   });
   if (!path) return; // user cancelled
-  render(await call("add_project", { path }));
+  const projects = await call("add_project", { path });
+  if (projects !== null) select(path);
+  render(projects);
 }
+
+// The watcher thread emits this after every new snapshot.
+listen("history-changed", (event) => {
+  if (event.payload === selectedPath) renderHistory();
+});
 
 document.querySelector("#add-project").addEventListener("click", addProject);
 call("list_projects").then(render);

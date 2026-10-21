@@ -1,5 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
+use versionable_core::store::{self, Entry};
+mod watcher;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 fn projects_file(app: &AppHandle) -> Result<PathBuf, String> {
@@ -34,13 +36,20 @@ fn list_projects(app: AppHandle) -> Vec<String> {
 }
 
 #[tauri::command]
+fn get_history(path: String) -> Vec<Entry> {
+    store::load_history(Path::new(&path))
+}
+
+#[tauri::command]
 fn add_project(app: AppHandle, path: String) -> Result<Vec<String>, String> {
     let mut projects = load_projects(&app);
     if projects.contains(&path) {
         Err("Project already exists".to_string())
     } else {
-        projects.push(path);
+        projects.push(path.clone());
         save_projects(&app, &projects)?;
+        watcher::watch_folder(&app, Path::new(&path));
+        versionable_core::store::snapshot(Path::new(&path)).map_err(|e| e.to_string())?;
         Ok(projects)
     }
 }
@@ -62,10 +71,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            watcher::start(app.handle())?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_projects,
             add_project,
-            remove_project
+            remove_project,
+            get_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

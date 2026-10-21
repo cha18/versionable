@@ -156,10 +156,94 @@ button {
 .detail {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  min-width: 0;
+  overflow-y: auto;
 }
 
 .placeholder {
+  margin: auto;
   color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.detail-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 16px 24px;
+}
+
+.entry {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  padding: 0 0 18px;
+}
+
+/* the vertical line joining entries */
+.entry:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.dot {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  background: var(--panel);
+}
+
+.entry.committed .dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.entry.latest .dot {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.entry-label {
+  color: var(--muted);
+}
+
+.entry.committed .entry-label {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.entry-meta {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
