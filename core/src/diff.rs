@@ -229,10 +229,13 @@ pub fn diff(old: &Project, new: &Project) -> Diff {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse::*;
+    use std::path::Path;
+
     #[test]
     fn diff_fixtures() {
-        let p1 = parse_als(Path::new("../fixtures/demo/01-demo.als")).unwrap();
-        let p2 = parse_als(Path::new("../fixtures/demo/01-demo.als")).unwrap();
+        let p1 = parse_als(Path::new("../fixtures/song1/01-original.als")).unwrap();
+        let p2 = parse_als(Path::new("../fixtures/song1/01-original.als")).unwrap();
         let p = diff(&p1, &p2);
         println!("{:#?}", p);
     }

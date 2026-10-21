@@ -116,7 +116,7 @@ mod tests {
     use super::*;
     #[test]
     fn prints_fixture() {
-        let p = parse_als(Path::new("../fixtures/demo/01-demo.als")).unwrap();
+        let p = parse_als(Path::new("../fixtures/song1/01-original.als")).unwrap();
         println!("{:#?}", p);
     }
 }

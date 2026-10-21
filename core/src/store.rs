@@ -1,0 +1,119 @@
+use anyhow::Context;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::{
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Commit {
+    pub msg: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Entry {
+    pub hash: String,
+    pub created_at: u64,
+    pub commit: Option<Commit>,
+}
+
+fn vc_dir(als: &Path) -> anyhow::Result<PathBuf> {
+    Ok(als.parent().context("file has no folder")?.join(".vc"))
+}
+
+fn history_file(als: &Path) -> anyhow::Result<PathBuf> {
+    Ok(vc_dir(als)?
+        .join(als.file_name().context("no name")?)
+        .join("history.json"))
+}
+
+fn snapshots_dir(als: &Path) -> anyhow::Result<PathBuf> {
+    Ok(vc_dir(als)?.join("snapshots"))
+}
+
+pub fn load_history(als: &Path) -> Vec<Entry> {
+    let history_path = history_file(als).unwrap_or_default();
+
+    match std::fs::read_to_string(history_path) {
+        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+        Err(_) => vec![],
+    }
+}
+
+fn save_history(als: &Path, history: &[Entry]) -> anyhow::Result<()> {
+    let path = history_file(als)?;
+    let data = serde_json::to_string_pretty(history)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, data)?;
+    Ok(())
+}
+
+pub fn snapshot(als: &Path) -> anyhow::Result<Option<Entry>> {
+    let snapshots_dir = snapshots_dir(als)?;
+    let bytes = std::fs::read(als)?;
+    let hash = hex::encode(Sha256::digest(&bytes));
+    let mut history = load_history(als);
+    if history.last().map_or(false, |e| e.hash == hash) {
+        return Ok(None);
+    };
+
+    let file = snapshots_dir.join(format!("{}.als", hash));
+    if !file.exists() {
+        std::fs::create_dir_all(&snapshots_dir)?;
+        std::fs::write(&file, &bytes)?;
+    }
+
+    let entry = Entry {
+        hash: hash,
+        created_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+        commit: None,
+    };
+    history.push(entry.clone());
+    save_history(als, &history)?;
+    Ok(Some(entry))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn count_snapshots(als: &Path) -> usize {
+        std::fs::read_dir(snapshots_dir(&als).unwrap())
+            .unwrap()
+            .filter_map(|f| f.ok())
+            .count()
+    }
+
+    #[test]
+    fn snapshot_dedups_by_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let als = dir.path().join("Song.als");
+        let v1 = "../fixtures/song1/01-original.als";
+        let v2 = "../fixtures/song1/02-original-addeddrums.als";
+
+        //initial save, check if snapshot returned, check if history length is 1
+        std::fs::copy(v1, &als).unwrap();
+        assert!(snapshot(&als).unwrap().is_some());
+        assert_eq!(load_history(&als).len(), 1);
+
+        //save again without changes, check if history is unchanged
+        std::fs::copy(v1, &als).unwrap();
+        assert!(snapshot(&als).unwrap().is_none());
+        assert_eq!(load_history(&als).len(), 1);
+
+        //save with changes and take snapshot, check if history length is 2 and 2 snapshot files exist
+        std::fs::copy(v2, &als).unwrap();
+        assert!(snapshot(&als).unwrap().is_some());
+        assert_eq!(load_history(&als).len(), 2);
+        assert_eq!(count_snapshots(&als), 2);
+
+        //save back to original version and take snapshot, check if history length is 3 and STILL 2 snapshot files exist only
+        std::fs::copy(v1, &als).unwrap();
+        assert!(snapshot(&als).unwrap().is_some());
+        assert_eq!(load_history(&als).len(), 3);
+        assert_eq!(count_snapshots(&als), 2);
+    }
+}
