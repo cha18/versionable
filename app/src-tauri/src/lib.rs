@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
-use versionable_core::store::{self, Entry};
+use versionable_core::store::{self, Entry, commit};
 mod watcher;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -47,9 +47,9 @@ fn add_project(app: AppHandle, path: String) -> Result<Vec<String>, String> {
         Err("Project already exists".to_string())
     } else {
         projects.push(path.clone());
-        save_projects(&app, &projects)?;
         watcher::watch_folder(&app, Path::new(&path));
         versionable_core::store::snapshot(Path::new(&path)).map_err(|e| e.to_string())?;
+        save_projects(&app, &projects)?;
         Ok(projects)
     }
 }
@@ -66,6 +66,12 @@ fn remove_project(app: AppHandle, path: String) -> Result<Vec<String>, String> {
     }
 }
 
+#[tauri::command]
+fn make_commit(path: String, msg: String) -> Result<Entry, String> {
+    let entry = commit(Path::new(&path), &msg).map_err(|e| e.to_string());
+    entry
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -79,7 +85,8 @@ pub fn run() {
             list_projects,
             add_project,
             remove_project,
-            get_history
+            get_history,
+            make_commit
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

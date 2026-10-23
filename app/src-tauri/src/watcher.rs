@@ -55,7 +55,8 @@ pub fn watch_folder(app: &AppHandle, als: &Path) {
     let Some(folder_dir) = als.parent() else {
         return;
     };
-    app.state::<FolderWatcher>()
+    let _ = app
+        .state::<FolderWatcher>()
         .0
         .lock()
         .unwrap()

@@ -172,10 +172,85 @@ button {
 
 .detail-header {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.title-row {
+  display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 20px 24px 12px;
-  border-bottom: 1px solid var(--border);
+}
+
+.commit-form {
+  display: flex;
+  gap: 8px;
+}
+
+.commit-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.commit-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.commit-form button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+
+.commit-form button:disabled,
+.commit-form input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.run {
+  position: relative;
+  padding: 0 0 18px 26px;
+}
+
+.run::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: repeating-linear-gradient(var(--border) 0 4px, transparent 4px 8px);
+}
+
+.run-toggle {
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.run-toggle:hover {
+  color: var(--accent);
+}
+
+.run-entries {
+  list-style: none;
+  margin: 10px 0 0 -26px;
+  padding: 0;
 }
 
 .detail-header h2 {

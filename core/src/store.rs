@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -76,6 +76,25 @@ pub fn snapshot(als: &Path) -> anyhow::Result<Option<Entry>> {
     Ok(Some(entry))
 }
 
+pub fn commit(als: &Path, msg: &str) -> anyhow::Result<Entry> {
+    if msg.trim().is_empty() {
+        return Err(anyhow!("Invalid message"));
+    };
+    let mut history = load_history(als);
+    let entry = history
+        .last_mut()
+        .ok_or(anyhow!("Nothing to commit yet."))?;
+    if entry.commit.is_some() {
+        anyhow::bail!("Latest save is already committed. Make a change and save first");
+    }
+    entry.commit = Some(Commit {
+        msg: msg.trim().to_string(),
+    });
+    let updated_entry = entry.clone();
+    save_history(als, &history)?;
+    Ok(updated_entry)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +134,39 @@ mod tests {
         assert!(snapshot(&als).unwrap().is_some());
         assert_eq!(load_history(&als).len(), 3);
         assert_eq!(count_snapshots(&als), 2);
+    }
+
+    #[test]
+    fn commit_with_no_saves_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let als = dir.path().join("Song.als");
+        std::fs::copy("../fixtures/song1/01-original.als", &als).unwrap();
+
+        assert!(commit(&als, "first").is_err());
+        assert!(load_history(&als).is_empty());
+    }
+
+    #[test]
+    fn post_commit_history_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let als = dir.path().join("Song.als");
+        std::fs::copy("../fixtures/song1/01-original.als", &als).unwrap();
+
+        snapshot(&als).unwrap();
+        assert!(commit(&als, &"     ".to_string()).is_err());
+
+        commit(&als, "first").unwrap();
+        assert_eq!(
+            load_history(&als)
+                .last()
+                .unwrap()
+                .commit
+                .as_ref()
+                .unwrap()
+                .msg,
+            "first".to_string()
+        );
+
+        assert!(commit(&als, &"next commit".to_string()).is_err());
     }
 }

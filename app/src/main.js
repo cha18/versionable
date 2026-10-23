@@ -7,6 +7,7 @@ const errorEl = document.querySelector("#error");
 const detailEl = document.querySelector("#detail");
 
 let selectedPath = null;
+const commitDrafts = new Map(); // project path → unsent commit message
 
 function fileName(path) {
   return path.split(/[\\/]/).pop().replace(/\.als$/i, "");
@@ -104,16 +105,24 @@ async function renderHistory() {
     return;
   }
 
-  const history = (await call("get_history", { path: selectedPath })) ?? [];
+  const path = selectedPath;
+  const history = (await call("get_history", { path })) ?? [];
+  if (path !== selectedPath) return; // user switched project while we were loading
 
   const header = document.createElement("header");
   header.className = "detail-header";
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
   const title = document.createElement("h2");
-  title.textContent = fileName(selectedPath);
+  title.textContent = fileName(path);
   const count = document.createElement("span");
   count.className = "muted";
-  count.textContent = `${history.length} save${history.length === 1 ? "" : "s"}`;
-  header.append(title, count);
+  const commits = history.filter((e) => e.commit).length;
+  count.textContent =
+    `${history.length} save${history.length === 1 ? "" : "s"} · ` +
+    `${commits} commit${commits === 1 ? "" : "s"}`;
+  titleRow.append(title, count);
+  header.append(titleRow, buildCommitForm(path, history));
 
   const list = document.createElement("ol");
   list.className = "history";
@@ -125,29 +134,108 @@ async function renderHistory() {
     list.appendChild(empty);
   }
 
-  // Newest first
-  [...history].reverse().forEach((entry, i) => {
-    const item = document.createElement("li");
-    item.className = "entry" + (entry.commit ? " committed" : "") + (i === 0 ? " latest" : "");
-
-    const dot = document.createElement("span");
-    dot.className = "dot";
-
-    const body = document.createElement("div");
-    body.className = "entry-body";
-    const label = document.createElement("span");
-    label.className = "entry-label";
-    label.textContent = entry.commit ? entry.commit.msg : "Autosave";
-    const meta = document.createElement("span");
-    meta.className = "entry-meta";
-    meta.textContent = `${formatTime(entry.created_at)} · ${entry.hash.slice(0, 7)}`;
-    body.append(label, meta);
-
-    item.append(dot, body);
-    list.appendChild(item);
+  // Newest first. The latest save is always shown (it's what a commit would label);
+  // older autosaves between commits collapse into one expandable row.
+  const newestFirst = [...history].reverse();
+  let run = [];
+  const flushRun = () => {
+    if (run.length > 0) list.appendChild(buildRun(run));
+    run = [];
+  };
+  newestFirst.forEach((entry, i) => {
+    if (i === 0 || entry.commit) {
+      flushRun();
+      list.appendChild(buildEntry(entry, i === 0));
+    } else {
+      run.push(entry);
+    }
   });
+  flushRun();
 
   detailEl.append(header, list);
+}
+
+function buildEntry(entry, isLatest) {
+  const item = document.createElement("li");
+  item.className = "entry" + (entry.commit ? " committed" : "") + (isLatest ? " latest" : "");
+
+  const dot = document.createElement("span");
+  dot.className = "dot";
+
+  const body = document.createElement("div");
+  body.className = "entry-body";
+  const label = document.createElement("span");
+  label.className = "entry-label";
+  label.textContent = entry.commit ? entry.commit.msg : isLatest ? "Latest save" : "Autosave";
+  const meta = document.createElement("span");
+  meta.className = "entry-meta";
+  meta.textContent = `${formatTime(entry.created_at)} · ${entry.hash.slice(0, 7)}`;
+  body.append(label, meta);
+
+  item.append(dot, body);
+  return item;
+}
+
+// A collapsed run of uncommitted autosaves; click to expand in place.
+function buildRun(entries) {
+  const item = document.createElement("li");
+  item.className = "run";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "run-toggle";
+  toggle.textContent = `··· ${entries.length} autosave${entries.length === 1 ? "" : "s"} ···`;
+
+  const inner = document.createElement("ol");
+  inner.className = "run-entries";
+  inner.hidden = true;
+  for (const entry of entries) inner.appendChild(buildEntry(entry, false));
+
+  toggle.addEventListener("click", () => {
+    inner.hidden = !inner.hidden;
+    item.classList.toggle("open", !inner.hidden);
+  });
+
+  item.append(toggle, inner);
+  return item;
+}
+
+function buildCommitForm(path, history) {
+  const form = document.createElement("form");
+  form.className = "commit-form";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Name this moment, e.g. “drums locked in”";
+  input.maxLength = 120;
+  // Keep what the user typed if a new save re-renders the panel mid-sentence.
+  input.value = commitDrafts.get(path) ?? "";
+  input.addEventListener("input", () => commitDrafts.set(path, input.value));
+
+  const button = document.createElement("button");
+  button.type = "submit";
+  button.textContent = "Commit";
+
+  const latest = history[history.length - 1];
+  if (!latest) {
+    input.disabled = button.disabled = true;
+    input.placeholder = "Save the set in Ableton to start its history";
+  } else if (latest.commit) {
+    input.disabled = button.disabled = true;
+    input.placeholder = "Latest save is committed. Make a change in Ableton and save";
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const result = await call("make_commit", { path, msg: input.value });
+    if (result !== null) {
+      commitDrafts.delete(path);
+      renderHistory();
+    }
+  });
+
+  form.append(input, button);
+  return form;
 }
 
 async function addProject() {
