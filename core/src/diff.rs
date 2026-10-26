@@ -118,15 +118,26 @@ pub fn diff_clips(
             Some(ix) => {
                 let aid = added.remove(ix);
                 let a = &new[&aid];
-                summary.clips_modified += 1;
-                let changed = get_changes(a, b);
-                diffclips.push(DiffClip {
-                    id: aid,
-                    status: Status::Modified,
-                    before: Some(b.clone()),
-                    after: Some(a.clone()),
-                    changed: changed,
-                })
+                let changed = get_changes(b, a);
+                if !changed.is_empty() {
+                    summary.clips_modified += 1;
+                    diffclips.push(DiffClip {
+                        id: aid,
+                        status: Status::Modified,
+                        before: Some(b.clone()),
+                        after: Some(a.clone()),
+                        changed: changed,
+                    })
+                } else {
+                    summary.clips_unchanged += 1;
+                    diffclips.push(DiffClip {
+                        id: aid,
+                        status: Status::Unchanged,
+                        before: Some(b.clone()),
+                        after: Some(a.clone()),
+                        changed: changed,
+                    })
+                }
             }
             None => {
                 summary.clips_removed += 1;
