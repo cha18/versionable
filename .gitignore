@@ -5,3 +5,4 @@ node_modules/
 fixtures/demo
 fixtures/*/Backup/
 fixtures/*/Ableton Project Info/
+fixtures/*/.vc

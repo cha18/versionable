@@ -21,10 +21,71 @@ function fileName(path) {
   return path.split(/[\\/]/).pop().replace(/\.als$/i, "");
 }
 
-function parentDir(path) {
-  const parts = path.split(/[\\/]/);
-  parts.pop();
-  return parts.join("/");
+function baseName(path) {
+  return path.split(/[\\/]/).pop();
+}
+
+// Display names and pane widths are UI preferences, so they live in localStorage.
+// Storage can be unavailable or empty; everything falls back to defaults.
+function loadPref(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function savePref(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // not fatal: the preference just won't survive a restart
+  }
+}
+
+const customNames = loadPref("projectNames", {}); // project path → display name
+
+function displayName(path) {
+  return customNames[path] || fileName(path);
+}
+
+function setDisplayName(path, name) {
+  const trimmed = name.trim();
+  if (trimmed && trimmed !== fileName(path)) customNames[path] = trimmed;
+  else delete customNames[path]; // empty or same as the file: back to the default
+  savePref("projectNames", customNames);
+  render(lastProjects);
+  if (path === selectedPath) renderHistory();
+}
+
+// Swap a name element for a text box. Enter or clicking away saves; Escape cancels.
+function startRename(nameEl, path) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "rename-input";
+  input.value = displayName(path);
+  input.placeholder = fileName(path);
+  input.maxLength = 80;
+
+  let finished = false;
+  const finish = (save) => {
+    if (finished) return;
+    finished = true;
+    if (save) setDisplayName(path, input.value);
+    else input.replaceWith(nameEl);
+  };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") finish(true);
+    if (e.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("click", (e) => e.stopPropagation());
+
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
 }
 
 function showError(message) {
@@ -43,8 +104,11 @@ async function call(command, args) {
   }
 }
 
+let lastProjects = [];
+
 function render(projects) {
   if (projects === null) return;
+  lastProjects = projects;
   listEl.innerHTML = "";
 
   if (projects.length === 0) {
@@ -63,10 +127,15 @@ function render(projects) {
     label.className = "project-label";
     const name = document.createElement("span");
     name.className = "project-name";
-    name.textContent = fileName(path);
+    name.textContent = displayName(path);
+    name.title = "Double-click to rename";
+    name.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startRename(name, path);
+    });
     const dir = document.createElement("span");
     dir.className = "project-dir";
-    dir.textContent = parentDir(path);
+    dir.textContent = baseName(path);
     label.append(name, dir);
 
     const remove = document.createElement("button");
@@ -80,9 +149,12 @@ function render(projects) {
       render(await call("remove_project", { path }));
     });
 
+    // Update the highlight in place rather than re-rendering, so the row under the
+    // pointer survives and a double-click on the name still registers.
     item.addEventListener("click", () => {
+      if (path === selectedPath) return;
+      for (const other of listEl.children) other.classList.toggle("selected", other === item);
       select(path);
-      render(projects);
     });
 
     item.append(label, remove);
@@ -125,12 +197,15 @@ async function renderHistory() {
   const titleRow = document.createElement("div");
   titleRow.className = "title-row";
   const title = document.createElement("h2");
-  title.textContent = fileName(path);
+  title.textContent = displayName(path);
+  title.className = "editable-title";
+  title.title = "Click to rename";
+  title.addEventListener("click", () => startRename(title, path));
   const count = document.createElement("span");
   count.className = "muted";
   const commits = history.filter((e) => e.commit).length;
   count.textContent =
-    `${history.length} save${history.length === 1 ? "" : "s"} · ` +
+    `${baseName(path)} · ${history.length} save${history.length === 1 ? "" : "s"} · ` +
     `${commits} commit${commits === 1 ? "" : "s"}`;
   titleRow.append(title, count);
   const notice = document.createElement("p");
@@ -181,7 +256,7 @@ async function renderHistory() {
 
   const workspace = document.createElement("div");
   workspace.className = "workspace";
-  workspace.append(historyPane, diffPane);
+  workspace.append(historyPane, makeResizer("--history-w", 200, 520, 280), diffPane);
 
   detailEl.append(header, workspace);
   updatePicks();
@@ -532,6 +607,52 @@ function buildArrangement(diff) {
   return root;
 }
 
+// A drag handle that sets a CSS width variable; double-click resets it.
+const paneWidths = loadPref("paneWidths", {});
+
+function applyWidth(cssVar, px) {
+  document.documentElement.style.setProperty(cssVar, `${px}px`);
+}
+
+function makeResizer(cssVar, min, max, initial) {
+  const handle = document.createElement("div");
+  handle.className = "resizer";
+  handle.title = "Drag to resize · double-click to reset";
+  let startX = 0;
+  let startWidth = 0;
+
+  const clamp = (px) => Math.min(max, Math.max(min, Math.round(px)));
+  const current = () => paneWidths[cssVar] ?? initial;
+
+  handle.addEventListener("pointerdown", (e) => {
+    startX = e.clientX;
+    startWidth = current();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    paneWidths[cssVar] = clamp(startWidth + e.clientX - startX);
+    applyWidth(cssVar, paneWidths[cssVar]);
+  });
+  const stop = (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    handle.releasePointerCapture(e.pointerId);
+    document.body.classList.remove("resizing");
+    savePref("paneWidths", paneWidths);
+  };
+  handle.addEventListener("pointerup", stop);
+  handle.addEventListener("pointercancel", stop);
+  handle.addEventListener("dblclick", () => {
+    delete paneWidths[cssVar];
+    applyWidth(cssVar, initial);
+    savePref("paneWidths", paneWidths);
+  });
+
+  applyWidth(cssVar, current());
+  return handle;
+}
+
 async function addProject() {
   const path = await open({
     multiple: false,
@@ -550,4 +671,5 @@ listen("history-changed", (event) => {
 });
 
 document.querySelector("#add-project").addEventListener("click", addProject);
+document.querySelector(".sidebar").after(makeResizer("--sidebar-w", 180, 480, 260));
 call("list_projects").then(render);
