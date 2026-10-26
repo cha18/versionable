@@ -280,6 +280,11 @@ function buildEntry(entry, index, isLatest) {
   meta.className = "entry-meta";
   meta.textContent = `${formatTime(entry.created_at)} · ${entry.hash.slice(0, 7)}`;
   body.append(label, meta);
+  // Commits (and uncommitted latest save) get a +X ~Y −Z line against what came before.
+  if (entry.commit || isLatest) {
+    const stats = buildStats(index);
+    if (stats) body.appendChild(stats);
+  }
 
   const restore = document.createElement("button");
   restore.type = "button";
@@ -398,14 +403,107 @@ function comparison() {
     const [a, b] = [...picks].sort((x, y) => x - y);
     return { old: a, new: b };
   }
-  if (picks.length === 1) {
-    const target = picks[0];
-    for (let i = target - 1; i >= 0; i--) {
-      if (currentHistory[i].commit) return { old: i, new: target };
-    }
-    return target > 0 ? { old: target - 1, new: target } : { old: null, new: target };
-  }
+  if (picks.length === 1) return { old: baseFor(picks[0]), new: picks[0] };
   return null;
+}
+
+// What a save is compared against: the commit before it, or the save before
+// if there's no earlier commit. null for the very first save.
+function baseFor(index) {
+  for (let i = index - 1; i >= 0; i--) {
+    if (currentHistory[i].commit) return i;
+  }
+  return index > 0 ? index - 1 : null;
+}
+
+// ---------- per-commit stat lines ----------
+
+// Summaries are keyed by the two snapshot hashes. Snapshots are content-addressed,
+// so a stored summary can never go stale and is safe to keep across restarts.
+const statsCache = new Map(Object.entries(loadPref("diffSummaries", {})));
+const STATS_CACHE_LIMIT = 500;
+
+function rememberSummary(oldHash, newHash, summary) {
+  statsCache.set(`${oldHash}|${newHash}`, summary);
+  while (statsCache.size > STATS_CACHE_LIMIT) statsCache.delete(statsCache.keys().next().value);
+  savePref("diffSummaries", Object.fromEntries(statsCache));
+}
+
+// Diffs run one at a time so a long history doesn't parse a dozen large sets at once.
+let statsQueue = Promise.resolve();
+
+function buildStats(index) {
+  const base = baseFor(index);
+  if (base === null) return null;
+  const oldHash = currentHistory[base].hash;
+  const newHash = currentHistory[index].hash;
+  const key = `${oldHash}|${newHash}`;
+
+  const el = document.createElement("span");
+  el.className = "entry-stats";
+  el.dataset.key = key;
+  el.dataset.against = currentHistory[base].commit ? "the previous commit" : "the previous save";
+
+  const cached = statsCache.get(key);
+  if (cached) {
+    fillStats(el, cached);
+    return el;
+  }
+
+  el.textContent = "…";
+  const path = selectedPath;
+  statsQueue = statsQueue.then(async () => {
+    // Skip if the user moved on, or another queued job already filled it in.
+    if (path !== selectedPath || statsCache.has(key)) {
+      if (statsCache.has(key)) fillAllStats(key);
+      return;
+    }
+    try {
+      const diff = await invoke("diff_snapshots", { path, oldHash, newHash });
+      diffCache.set(`${path}|${key}`, diff);
+      rememberSummary(oldHash, newHash, diff.summary);
+      fillAllStats(key);
+    } catch (e) {
+      // A failed stat line isn't worth the error banner; say so on hover instead.
+      for (const target of document.querySelectorAll(`.entry-stats[data-key="${key}"]`)) {
+        target.textContent = "–";
+        target.title = `Couldn't compare: ${e}`;
+      }
+    }
+  });
+  return el;
+}
+
+// The panel may have re-rendered while the diff ran, so look the elements up again.
+function fillAllStats(key) {
+  for (const target of document.querySelectorAll(`.entry-stats[data-key="${key}"]`)) {
+    fillStats(target, statsCache.get(key));
+  }
+}
+
+function fillStats(el, s) {
+  el.innerHTML = "";
+  el.title =
+    `Clips vs ${el.dataset.against}: ${s.clips_added} added, ${s.clips_modified} modified, ` +
+    `${s.clips_removed} removed, ${s.clips_unchanged} unchanged\n` +
+    `Tracks: ${s.tracks_added} added, ${s.tracks_removed} removed, ${s.tracks_modified} modified`;
+
+  if (s.clips_added + s.clips_modified + s.clips_removed + s.tracks_added + s.tracks_removed === 0) {
+    el.textContent = "no arrangement changes";
+    return;
+  }
+  const part = (cls, text) => {
+    const span = document.createElement("span");
+    span.className = cls;
+    span.textContent = text;
+    el.appendChild(span);
+  };
+  part("added", `+${s.clips_added}`);
+  part("modified", `~${s.clips_modified}`);
+  part("removed", `−${s.clips_removed}`);
+  if (s.tracks_added + s.tracks_removed > 0) {
+    part("tracks", `tracks +${s.tracks_added} −${s.tracks_removed}`);
+  }
 }
 
 function updatePicks() {
@@ -448,10 +546,18 @@ async function renderDiff(pair) {
     if (token !== diffToken) return; // the user picked something else meanwhile
     if (diff === null) return placeholder("Couldn't compare these saves");
     diffCache.set(key, diff);
+    rememberSummary(oldHash, newHash, diff.summary);
+    fillAllStats(`${oldHash}|${newHash}`);
   }
 
+  // Keep the scroll position when a new save re-renders the same comparison.
+  const previous = pane.querySelector(".arrangement");
+  const keepScroll = previous?.dataset.key === key ? previous.scrollLeft : 0;
   pane.innerHTML = "";
-  pane.append(buildDiffHeader(pair, diff.summary), buildArrangement(diff));
+  const arrangement = buildArrangement(diff);
+  arrangement.dataset.key = key;
+  pane.append(buildDiffHeader(pair, diff.summary), arrangement);
+  arrangement.scrollLeft = keepScroll;
 }
 
 function buildDiffHeader(pair, summary) {
@@ -485,7 +591,11 @@ function buildDiffHeader(pair, summary) {
     }
   }
 
-  header.append(title, chips);
+  const toolbar = document.createElement("div");
+  toolbar.className = "diff-toolbar";
+  toolbar.append(chips, buildZoomControls());
+
+  header.append(title, toolbar);
   return header;
 }
 
@@ -502,8 +612,130 @@ function clipTitle(clip, status, changed) {
   return text;
 }
 
-// One lane per track, clips positioned by beat as a percentage of the song length,
-// so the whole arrangement fits the pane without horizontal scrolling.
+// ---------- zoom ----------
+
+// 1 = the whole song fits the pane. Zooming widens the lanes (clips are positioned in %
+// of the lane, so they scale for free) and the pane scrolls horizontally.
+let zoom = 1;
+const GRID_STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+
+function buildZoomControls() {
+  const controls = document.createElement("div");
+  controls.className = "zoom-controls";
+  controls.title = "Zoom: pinch, ⌘/Ctrl + scroll, or the + and − keys";
+  const button = (text, label, onClick) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = text;
+    b.setAttribute("aria-label", label);
+    b.addEventListener("click", onClick);
+    controls.appendChild(b);
+    return b;
+  };
+  button("−", "Zoom out", () => setZoom(zoom / 1.5));
+  const level = document.createElement("span");
+  level.id = "zoom-level";
+  controls.appendChild(level);
+  button("+", "Zoom in", () => setZoom(zoom * 1.5));
+  button("Fit", "Fit the whole song", () => setZoom(1));
+  updateZoomLabel(level);
+  return controls;
+}
+
+function updateZoomLabel(level = document.querySelector("#zoom-level")) {
+  if (level) level.textContent = zoom === 1 ? "Fit" : `${Math.round(zoom * 100)}%`;
+}
+
+// Changes zoom, keeping the beat under clientX (or the middle of the view) in place.
+function setZoom(next, clientX) {
+  const root = document.querySelector(".arrangement");
+  if (!root) return;
+  const maxZoom = Number(root.dataset.maxZoom);
+  next = Math.min(maxZoom, Math.max(1, next));
+  if (Math.abs(next - zoom) < 1e-3) return;
+
+  const labelWidth = root.querySelector(".track-label").offsetWidth;
+  const viewport = root.clientWidth - labelWidth; // visible lane width
+  const box = root.getBoundingClientRect();
+  const x = clientX === undefined ? viewport / 2 : Math.min(viewport, Math.max(0, clientX - box.left - labelWidth));
+  const songFraction = (root.scrollLeft + x) / (viewport * zoom);
+
+  zoom = next;
+  applyZoom(root);
+  root.scrollLeft = songFraction * viewport * zoom - x;
+  updateZoomLabel();
+}
+
+// Sets the lane width and redraws the ruler and grid for the current zoom.
+function applyZoom(root) {
+  const totalBars = Number(root.dataset.totalBars);
+  zoom = Math.min(zoom, Number(root.dataset.maxZoom));
+  // Finest bar step that still shows ≤ 16 labels across the visible width.
+  const step = GRID_STEPS.find((n) => totalBars / n / zoom <= 16 && totalBars % n === 0) ?? totalBars;
+  root.style.setProperty("--zoom", zoom);
+  const at = (bar) => `${(bar / totalBars) * 100}%`;
+
+  const rulerLane = root.querySelector(".ruler .lane");
+  rulerLane.innerHTML = "";
+  for (let b = 0; b < totalBars; b += step) {
+    const mark = document.createElement("span");
+    mark.className = "bar-mark";
+    mark.style.left = at(b);
+    mark.textContent = String(b + 1);
+    rulerLane.appendChild(mark);
+  }
+
+  // Grid lines use the same % positions as the ruler marks, so they can't drift apart.
+  // (A repeating CSS background did: browsers round each tile to whole pixels.)
+  const grid = root.querySelector(".grid-overlay");
+  grid.innerHTML = "";
+  const line = (bar, cls) => {
+    const el = document.createElement("span");
+    el.className = cls;
+    el.style.left = at(bar);
+    grid.appendChild(el);
+  };
+  for (let b = step; b < totalBars; b += step) line(b, "grid-line");
+  if (totalBars / zoom <= 12) {
+    // Beat lines once bars are wide enough to need them.
+    for (let beat = 1; beat < totalBars * BEATS_PER_BAR; beat++) {
+      const bar = beat / BEATS_PER_BAR;
+      if (bar % step !== 0) line(bar, "grid-line beat");
+    }
+  }
+}
+
+function attachZoomGestures(root) {
+  // Trackpad pinch arrives as ctrl+wheel in Chromium, and ⌘/Ctrl+wheel is the mouse equivalent.
+  root.addEventListener(
+    "wheel",
+    (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom(zoom * Math.exp(-e.deltaY * 0.01), e.clientX);
+    },
+    { passive: false },
+  );
+  // WebKit (the macOS webview) reports pinch as gesture events instead.
+  let gestureStart = 1;
+  root.addEventListener("gesturestart", (e) => {
+    e.preventDefault();
+    gestureStart = zoom;
+  });
+  root.addEventListener("gesturechange", (e) => {
+    e.preventDefault();
+    setZoom(gestureStart * e.scale, e.clientX);
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest?.("input, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "+" || e.key === "=") setZoom(zoom * 1.5);
+  if (e.key === "-" || e.key === "_") setZoom(zoom / 1.5);
+});
+
+// One lane per track, clips positioned by beat as a percentage of the lane width.
+// At zoom 1 the whole song fits the pane; zooming widens the lanes.
 function buildArrangement(diff) {
   const root = document.createElement("div");
   root.className = "arrangement";
@@ -514,12 +746,15 @@ function buildArrangement(diff) {
       for (const c of [clip.before, clip.after]) if (c) lastBeat = Math.max(lastBeat, c.end);
     }
   }
-  // Round up to a whole number of grid steps; pick a step that gives ≤ 16 labels.
+  // Round the song length up to a whole number of the zoomed-out grid step, so every
+  // finer step at higher zoom divides it evenly too.
   const bars = Math.max(4, Math.ceil(lastBeat / BEATS_PER_BAR));
-  const step = [1, 2, 4, 8, 16, 32, 64, 128].find((n) => bars / n <= 16) ?? 256;
-  const totalBars = Math.ceil(bars / step) * step;
+  const fitStep = GRID_STEPS.find((n) => bars / n <= 16) ?? 512;
+  const totalBars = Math.ceil(bars / fitStep) * fitStep;
   const totalBeats = totalBars * BEATS_PER_BAR;
   const pct = (beat) => `${(beat / totalBeats) * 100}%`;
+  root.dataset.totalBars = totalBars;
+  root.dataset.maxZoom = Math.max(1, totalBars / 2); // zoomed in fully: ~2 bars on screen
 
   const ruler = document.createElement("div");
   ruler.className = "lane-row ruler";
@@ -527,15 +762,13 @@ function buildArrangement(diff) {
   rulerLabel.className = "track-label";
   const rulerLane = document.createElement("div");
   rulerLane.className = "lane";
-  for (let b = 0; b <= totalBars; b += step) {
-    const mark = document.createElement("span");
-    mark.className = "bar-mark";
-    mark.style.left = pct(b * BEATS_PER_BAR);
-    mark.textContent = b < totalBars ? String(b + 1) : "";
-    rulerLane.appendChild(mark);
-  }
   ruler.append(rulerLabel, rulerLane);
   root.appendChild(ruler);
+
+  // One overlay spanning every lane holds the grid lines; filled in by applyZoom.
+  const grid = document.createElement("div");
+  grid.className = "grid-overlay";
+  root.appendChild(grid);
 
   // Group nesting depth, following group_id up the chain.
   const byId = new Map(diff.tracks.map((t) => [t.id, t]));
@@ -562,12 +795,6 @@ function buildArrangement(diff) {
 
     const lane = document.createElement("div");
     lane.className = "lane";
-    for (let b = step; b < totalBars; b += step) {
-      const line = document.createElement("span");
-      line.className = "grid-line";
-      line.style.left = pct(b * BEATS_PER_BAR);
-      lane.appendChild(line);
-    }
 
     const addBlock = (clip, cls, title) => {
       const block = document.createElement("div");
@@ -604,6 +831,8 @@ function buildArrangement(diff) {
     empty.textContent = "No tracks in either save";
     root.appendChild(empty);
   }
+  applyZoom(root);
+  attachZoomGestures(root);
   return root;
 }
 

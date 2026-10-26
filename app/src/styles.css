@@ -14,6 +14,7 @@
   --clip-text: #3a3a36;
   --lane: #fbfbfa;
   --label-w: 170px;
+  --ruler-h: 22px;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
   font-size: 14px;
@@ -495,13 +496,17 @@ button {
 /* ---------- arrangement view ---------- */
 
 .arrangement {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--panel);
 }
 
 .lane-row {
+  /* label column + lanes stretched by the zoom factor */
+  width: calc(var(--label-w) + (100% - var(--label-w)) * var(--zoom, 1));
   display: flex;
   height: 30px;
   border-bottom: 1px solid var(--border);
@@ -521,6 +526,11 @@ button {
   font-size: 12px;
   border-right: 1px solid var(--border);
   overflow: hidden;
+  /* stays put while the lanes scroll sideways */
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--panel);
 }
 
 .track-name {
@@ -569,23 +579,23 @@ button {
   position: relative;
   flex: 1;
   min-width: 0;
-  background: var(--lane);
+  background-color: var(--lane);
 }
 
 .track-removed .lane {
-  background: color-mix(in srgb, var(--removed) 6%, var(--lane));
+  background-color: color-mix(in srgb, var(--removed) 6%, var(--lane));
 }
 
 .track-added .lane {
-  background: color-mix(in srgb, var(--added) 6%, var(--lane));
+  background-color: color-mix(in srgb, var(--added) 6%, var(--lane));
 }
 
 .kind-group .lane {
-  background: color-mix(in srgb, var(--border) 45%, var(--lane));
+  background-color: color-mix(in srgb, var(--border) 45%, var(--lane));
 }
 
 .ruler {
-  height: 22px;
+  height: var(--ruler-h);
   background: var(--panel);
 }
 
@@ -604,17 +614,10 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-.grid-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border);
-  opacity: 0.6;
-}
 
 .clip {
   position: absolute;
+  z-index: 2;
   top: 4px;
   bottom: 4px;
   min-width: 3px;
@@ -653,7 +656,7 @@ button {
 /* Drawn above the new clips: where a clip was trimmed under a pasted copy,
    the old outline would otherwise be hidden beneath it. */
 .clip.ghost {
-  z-index: 1;
+  z-index: 3;
   pointer-events: none;
   background: transparent;
   border: 1.5px dashed color-mix(in srgb, var(--modified) 70%, transparent);
@@ -719,4 +722,94 @@ body.resizing {
 .title-row .rename-input {
   font-size: 18px;
   font-weight: 600;
+}
+
+/* ---------- per-commit stat line ---------- */
+
+.entry-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-stats .added {
+  color: var(--added);
+}
+
+.entry-stats .modified {
+  color: var(--modified);
+}
+
+.entry-stats .removed {
+  color: var(--removed);
+}
+
+/* ---------- zoom ---------- */
+
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.zoom-controls button {
+  padding: 3px 9px;
+  border: none;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.zoom-controls button:hover {
+  color: var(--accent);
+  background: var(--bg);
+}
+
+.zoom-controls button:last-child {
+  border-left: 1px solid var(--border);
+}
+
+#zoom-level {
+  min-width: 44px;
+  text-align: center;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Spans the lanes (not the labels or ruler), widened by the same zoom factor.
+   Sits above the lane backgrounds but below the clips. */
+.grid-overlay {
+  position: absolute;
+  top: var(--ruler-h);
+  bottom: 0;
+  left: var(--label-w);
+  width: calc((100% - var(--label-w)) * var(--zoom, 1));
+  z-index: 1;
+  pointer-events: none;
+}
+
+.grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  opacity: 0.7;
+}
+
+.grid-line.beat {
+  opacity: 0.3;
 }

@@ -1,5 +1,3 @@
-use anyhow::Context;
-use serde_json::to_string;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use versionable_core::{
