@@ -9,6 +9,14 @@ const detailEl = document.querySelector("#detail");
 let selectedPath = null;
 const commitDrafts = new Map(); // project path → unsent commit message
 
+// Compare mode: up to two picked history positions (indices into the history array).
+// Indices rather than hashes, because the same content can be saved twice.
+let picks = [];
+let currentHistory = [];
+// Snapshots are content-addressed, so a diff between two hashes never goes stale.
+const diffCache = new Map();
+let diffToken = 0; // ignores a slow diff that finishes after the user picked again
+
 function fileName(path) {
   return path.split(/[\\/]/).pop().replace(/\.als$/i, "");
 }
@@ -84,6 +92,7 @@ function render(projects) {
 
 function select(path) {
   selectedPath = path;
+  picks = [];
   renderHistory();
 }
 
@@ -108,6 +117,8 @@ async function renderHistory() {
   const path = selectedPath;
   const history = (await call("get_history", { path })) ?? [];
   if (path !== selectedPath) return; // user switched project while we were loading
+  currentHistory = history;
+  picks = picks.filter((i) => i < history.length);
 
   const header = document.createElement("header");
   header.className = "detail-header";
@@ -122,7 +133,11 @@ async function renderHistory() {
     `${history.length} save${history.length === 1 ? "" : "s"} · ` +
     `${commits} commit${commits === 1 ? "" : "s"}`;
   titleRow.append(title, count);
-  header.append(titleRow, buildCommitForm(path, history));
+  const notice = document.createElement("p");
+  notice.id = "notice";
+  notice.className = "notice";
+  notice.hidden = true;
+  header.append(titleRow, buildCommitForm(path, history), notice);
 
   const list = document.createElement("ol");
   list.className = "history";
@@ -143,21 +158,40 @@ async function renderHistory() {
     run = [];
   };
   newestFirst.forEach((entry, i) => {
+    const index = history.length - 1 - i;
     if (i === 0 || entry.commit) {
       flushRun();
-      list.appendChild(buildEntry(entry, i === 0));
+      list.appendChild(buildEntry(entry, index, i === 0));
     } else {
-      run.push(entry);
+      run.push([entry, index]);
     }
   });
   flushRun();
 
-  detailEl.append(header, list);
+  const historyPane = document.createElement("div");
+  historyPane.className = "history-pane";
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Click a save to see what changed. Click a second save to compare the two.";
+  historyPane.append(hint, list);
+
+  const diffPane = document.createElement("section");
+  diffPane.id = "diff-pane";
+  diffPane.className = "diff-pane";
+
+  const workspace = document.createElement("div");
+  workspace.className = "workspace";
+  workspace.append(historyPane, diffPane);
+
+  detailEl.append(header, workspace);
+  updatePicks();
 }
 
-function buildEntry(entry, isLatest) {
+function buildEntry(entry, index, isLatest) {
   const item = document.createElement("li");
   item.className = "entry" + (entry.commit ? " committed" : "") + (isLatest ? " latest" : "");
+  item.dataset.index = index;
+  item.addEventListener("click", () => togglePick(index));
 
   const dot = document.createElement("span");
   dot.className = "dot";
@@ -172,12 +206,43 @@ function buildEntry(entry, isLatest) {
   meta.textContent = `${formatTime(entry.created_at)} · ${entry.hash.slice(0, 7)}`;
   body.append(label, meta);
 
-  item.append(dot, body);
+  const restore = document.createElement("button");
+  restore.type = "button";
+  restore.className = "restore";
+  restore.textContent = "Restore";
+  restore.title = "Copy this save to a new .als next to your project (nothing is overwritten)";
+  restore.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const restored = await call("restore_snapshot", { path: selectedPath, hash: entry.hash });
+    if (restored !== null) showNotice(restored);
+  });
+
+  item.append(dot, body, restore);
   return item;
+}
+
+function showNotice(restoredPath) {
+  const notice = document.querySelector("#notice");
+  if (!notice) return;
+  notice.innerHTML = "";
+  const text = document.createElement("span");
+  text.textContent = `Restored as “${restoredPath.split(/[\\/]/).pop()}” next to your project.`;
+  notice.append(text);
+  const reveal = window.__TAURI__.opener?.revealItemInDir;
+  if (reveal) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Show in folder";
+    button.addEventListener("click", () => reveal(restoredPath).catch((e) => showError(String(e))));
+    notice.append(button);
+  }
+  notice.hidden = false;
 }
 
 // A collapsed run of uncommitted autosaves; click to expand in place.
 function buildRun(entries) {
+  // A run starts open if it holds a picked save, so a re-render doesn't hide the pick.
+  const holdsPick = entries.some(([, index]) => picks.includes(index));
   const item = document.createElement("li");
   item.className = "run";
 
@@ -188,8 +253,9 @@ function buildRun(entries) {
 
   const inner = document.createElement("ol");
   inner.className = "run-entries";
-  inner.hidden = true;
-  for (const entry of entries) inner.appendChild(buildEntry(entry, false));
+  inner.hidden = !holdsPick;
+  item.classList.toggle("open", holdsPick);
+  for (const [entry, index] of entries) inner.appendChild(buildEntry(entry, index, false));
 
   toggle.addEventListener("click", () => {
     inner.hidden = !inner.hidden;
@@ -236,6 +302,234 @@ function buildCommitForm(path, history) {
 
   form.append(input, button);
   return form;
+}
+
+function togglePick(index) {
+  if (picks.includes(index)) picks = picks.filter((i) => i !== index);
+  else picks = [...picks, index].slice(-2); // a third click replaces the oldest pick
+  updatePicks();
+}
+
+function entryLabel(index) {
+  const entry = currentHistory[index];
+  if (entry.commit) return `“${entry.commit.msg}”`;
+  return `${index === currentHistory.length - 1 ? "Latest save" : "Autosave"} ${formatTime(entry.created_at)}`;
+}
+
+// One pick: compare with the commit before it (or the save before, if there's no
+// earlier commit). Two picks: older → newer, whichever order they were clicked in.
+function comparison() {
+  if (picks.length === 2) {
+    const [a, b] = [...picks].sort((x, y) => x - y);
+    return { old: a, new: b };
+  }
+  if (picks.length === 1) {
+    const target = picks[0];
+    for (let i = target - 1; i >= 0; i--) {
+      if (currentHistory[i].commit) return { old: i, new: target };
+    }
+    return target > 0 ? { old: target - 1, new: target } : { old: null, new: target };
+  }
+  return null;
+}
+
+function updatePicks() {
+  const pair = comparison();
+  for (const item of detailEl.querySelectorAll(".entry")) {
+    const index = Number(item.dataset.index);
+    item.classList.toggle("picked", picks.includes(index));
+    item.classList.toggle("base", pair !== null && pair.old === index && !picks.includes(index));
+  }
+  renderDiff(pair);
+}
+
+async function renderDiff(pair) {
+  const pane = document.querySelector("#diff-pane");
+  if (!pane) return;
+  const token = ++diffToken;
+
+  const placeholder = (text) => {
+    pane.innerHTML = "";
+    const p = document.createElement("p");
+    p.className = "placeholder";
+    p.textContent = text;
+    pane.appendChild(p);
+  };
+
+  if (pair === null) return placeholder("Pick a save to see what changed");
+  if (pair.old === null) {
+    return placeholder("This is the first save, so there's nothing before it. Pick another save to compare.");
+  }
+
+  const path = selectedPath;
+  const oldHash = currentHistory[pair.old].hash;
+  const newHash = currentHistory[pair.new].hash;
+  const key = `${path}|${oldHash}|${newHash}`;
+
+  let diff = diffCache.get(key);
+  if (!diff) {
+    placeholder("Comparing…");
+    diff = await call("diff_snapshots", { path, oldHash, newHash });
+    if (token !== diffToken) return; // the user picked something else meanwhile
+    if (diff === null) return placeholder("Couldn't compare these saves");
+    diffCache.set(key, diff);
+  }
+
+  pane.innerHTML = "";
+  pane.append(buildDiffHeader(pair, diff.summary), buildArrangement(diff));
+}
+
+function buildDiffHeader(pair, summary) {
+  const header = document.createElement("div");
+  header.className = "diff-header";
+
+  const title = document.createElement("div");
+  title.className = "diff-title";
+  title.textContent = `${entryLabel(pair.old)}  →  ${entryLabel(pair.new)}`;
+
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  const chip = (cls, text) => {
+    const span = document.createElement("span");
+    span.className = `chip ${cls}`;
+    span.textContent = text;
+    chips.appendChild(span);
+  };
+  const s = summary;
+  const changes = s.clips_added + s.clips_modified + s.clips_removed;
+  const trackChanges = s.tracks_added + s.tracks_removed;
+  if (changes === 0 && trackChanges === 0) {
+    chip("none", "No arrangement changes");
+  } else {
+    chip("added", `+${s.clips_added} added`);
+    chip("modified", `~${s.clips_modified} modified`);
+    chip("removed", `−${s.clips_removed} removed`);
+    chip("unchanged", `${s.clips_unchanged} unchanged`);
+    if (trackChanges > 0) {
+      chip("tracks", `tracks +${s.tracks_added} −${s.tracks_removed}`);
+    }
+  }
+
+  header.append(title, chips);
+  return header;
+}
+
+const BEATS_PER_BAR = 4; // assumes 4/4, which covers the vast majority of sets
+
+function bar(beat) {
+  return Math.floor(beat / BEATS_PER_BAR) + 1;
+}
+
+function clipTitle(clip, status, changed) {
+  const range = `bars ${bar(clip.start)}–${bar(Math.max(clip.start, clip.end - 1e-6))}`;
+  let text = `${clip.name || "Untitled clip"} · ${range} · ${status}`;
+  if (changed.length > 0) text += ` (${changed.join(", ").replaceAll("_", " ")})`;
+  return text;
+}
+
+// One lane per track, clips positioned by beat as a percentage of the song length,
+// so the whole arrangement fits the pane without horizontal scrolling.
+function buildArrangement(diff) {
+  const root = document.createElement("div");
+  root.className = "arrangement";
+
+  let lastBeat = 0;
+  for (const track of diff.tracks) {
+    for (const clip of track.clips) {
+      for (const c of [clip.before, clip.after]) if (c) lastBeat = Math.max(lastBeat, c.end);
+    }
+  }
+  // Round up to a whole number of grid steps; pick a step that gives ≤ 16 labels.
+  const bars = Math.max(4, Math.ceil(lastBeat / BEATS_PER_BAR));
+  const step = [1, 2, 4, 8, 16, 32, 64, 128].find((n) => bars / n <= 16) ?? 256;
+  const totalBars = Math.ceil(bars / step) * step;
+  const totalBeats = totalBars * BEATS_PER_BAR;
+  const pct = (beat) => `${(beat / totalBeats) * 100}%`;
+
+  const ruler = document.createElement("div");
+  ruler.className = "lane-row ruler";
+  const rulerLabel = document.createElement("div");
+  rulerLabel.className = "track-label";
+  const rulerLane = document.createElement("div");
+  rulerLane.className = "lane";
+  for (let b = 0; b <= totalBars; b += step) {
+    const mark = document.createElement("span");
+    mark.className = "bar-mark";
+    mark.style.left = pct(b * BEATS_PER_BAR);
+    mark.textContent = b < totalBars ? String(b + 1) : "";
+    rulerLane.appendChild(mark);
+  }
+  ruler.append(rulerLabel, rulerLane);
+  root.appendChild(ruler);
+
+  // Group nesting depth, following group_id up the chain.
+  const byId = new Map(diff.tracks.map((t) => [t.id, t]));
+  const depth = (track) => {
+    let d = 0;
+    for (let t = track; t.group_id !== null && byId.has(t.group_id) && d < 16; t = byId.get(t.group_id)) d++;
+    return d;
+  };
+
+  for (const track of diff.tracks) {
+    const row = document.createElement("div");
+    row.className = `lane-row track-${track.status} kind-${track.kind}`;
+
+    const label = document.createElement("div");
+    label.className = "track-label";
+    label.style.paddingLeft = `${10 + depth(track) * 14}px`;
+    label.title = `${track.name} (${track.kind}, ${track.status})`;
+    const marker = document.createElement("span");
+    marker.className = "track-marker";
+    const name = document.createElement("span");
+    name.className = "track-name";
+    name.textContent = track.name;
+    label.append(marker, name);
+
+    const lane = document.createElement("div");
+    lane.className = "lane";
+    for (let b = step; b < totalBars; b += step) {
+      const line = document.createElement("span");
+      line.className = "grid-line";
+      line.style.left = pct(b * BEATS_PER_BAR);
+      lane.appendChild(line);
+    }
+
+    const addBlock = (clip, cls, title) => {
+      const block = document.createElement("div");
+      block.className = `clip ${cls}`;
+      block.style.left = pct(clip.start);
+      block.style.width = pct(Math.max(0, clip.end - clip.start));
+      block.title = title;
+      const text = document.createElement("span");
+      text.textContent = clip.name;
+      block.appendChild(text);
+      lane.appendChild(block);
+    };
+
+    for (const clip of track.clips) {
+      if (clip.status === "removed") {
+        addBlock(clip.before, "removed", clipTitle(clip.before, "removed", []));
+      } else if (clip.status === "modified") {
+        const moved = clip.changed.includes("start") || clip.changed.includes("end");
+        // Show where a moved or resized clip used to be as a faint outline.
+        if (moved) addBlock(clip.before, "ghost", clipTitle(clip.before, "before the change", []));
+        addBlock(clip.after, "modified", clipTitle(clip.after, "modified", clip.changed));
+      } else {
+        addBlock(clip.after, clip.status, clipTitle(clip.after, clip.status, []));
+      }
+    }
+
+    row.append(label, lane);
+    root.appendChild(row);
+  }
+
+  if (diff.tracks.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "placeholder";
+    empty.textContent = "No tracks in either save";
+    root.appendChild(empty);
+  }
+  return root;
 }
 
 async function addProject() {

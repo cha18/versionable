@@ -1,4 +1,4 @@
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -51,6 +51,32 @@ fn save_history(als: &Path, history: &[Entry]) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn snapshot_path(als: &Path, hash: &str) -> anyhow::Result<PathBuf> {
+    let snapshots_dir = snapshots_dir(als)?;
+    Ok(snapshots_dir.join(format!("{}.als", hash)))
+}
+
+pub fn restore(als: &Path, hash: &str) -> anyhow::Result<PathBuf> {
+    let snapshot_path = snapshot_path(als, hash)?;
+    let file_name = als
+        .file_stem()
+        .context("invalid file name")?
+        .to_str()
+        .context("non-utf8 characters found")?;
+    if !snapshot_path.exists() {
+        bail!("snapshot file does not exist")
+    }
+    let restore_path = als.with_file_name(format!("{} (restored {}).als", file_name, &hash[0..7]));
+    if restore_path.exists() {
+        bail!(
+            "{} already exists, bailing to prevent overwrite",
+            restore_path.display()
+        )
+    }
+    std::fs::copy(snapshot_path, &restore_path)?;
+    Ok(restore_path)
+}
+
 pub fn snapshot(als: &Path) -> anyhow::Result<Option<Entry>> {
     let snapshots_dir = snapshots_dir(als)?;
     let bytes = std::fs::read(als)?;
@@ -60,7 +86,7 @@ pub fn snapshot(als: &Path) -> anyhow::Result<Option<Entry>> {
         return Ok(None);
     };
 
-    let file = snapshots_dir.join(format!("{}.als", hash));
+    let file = snapshot_path(als, &hash)?;
     if !file.exists() {
         std::fs::create_dir_all(&snapshots_dir)?;
         std::fs::write(&file, &bytes)?;
@@ -78,7 +104,7 @@ pub fn snapshot(als: &Path) -> anyhow::Result<Option<Entry>> {
 
 pub fn commit(als: &Path, msg: &str) -> anyhow::Result<Entry> {
     if msg.trim().is_empty() {
-        return Err(anyhow!("Invalid message"));
+        return Err(anyhow!("Invalid commit message"));
     };
     let mut history = load_history(als);
     let entry = history
@@ -168,5 +194,23 @@ mod tests {
         );
 
         assert!(commit(&als, &"next commit".to_string()).is_err());
+    }
+
+    #[test]
+    fn restore_copies_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let als = dir.path().join("Song.als");
+        std::fs::copy("../fixtures/song1/01-original.als", &als).unwrap();
+
+        let entry = snapshot(&als).unwrap();
+        let hash = &entry.as_ref().unwrap().hash;
+        let b = restore(&als, hash).unwrap();
+        assert_eq!(
+            b,
+            dir.path()
+                .join(format!("Song (restored {}).als", &hash[..7]))
+        );
+        assert_eq!(std::fs::read(&als).unwrap(), std::fs::read(b).unwrap());
+        assert!(restore(&als, hash).is_err());
     }
 }

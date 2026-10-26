@@ -1,6 +1,13 @@
+use anyhow::Context;
+use serde_json::to_string;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
-use versionable_core::store::{self, Entry, commit};
+use versionable_core::{
+    diff,
+    diff::Diff,
+    parse,
+    store::{self, Entry, commit},
+};
 mod watcher;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -30,6 +37,14 @@ fn save_projects(app: &AppHandle, projects: &[String]) -> Result<(), String> {
     std::fs::write(path, data).map_err(|e| e.to_string())
 }
 
+fn diff_inner(als: &Path, old_hash: &str, new_hash: &str) -> anyhow::Result<Diff> {
+    let als_path = Path::new(&als);
+    let old_snapshot_path = store::snapshot_path(als_path, &old_hash)?;
+    let new_snapshot_path = store::snapshot_path(als_path, &new_hash)?;
+    let old_snapshot_proj = parse::parse_als(&old_snapshot_path)?;
+    let new_snapshot_proj = parse::parse_als(&new_snapshot_path)?;
+    Ok(diff::diff(&old_snapshot_proj, &new_snapshot_proj))
+}
 #[tauri::command]
 fn list_projects(app: AppHandle) -> Vec<String> {
     load_projects(&app)
@@ -72,6 +87,17 @@ fn make_commit(path: String, msg: String) -> Result<Entry, String> {
     entry
 }
 
+#[tauri::command]
+async fn diff_snapshots(path: String, old_hash: String, new_hash: String) -> Result<Diff, String> {
+    diff_inner(Path::new(&path), &old_hash, &new_hash).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn restore_snapshot(path: String, hash: String) -> Result<String, String> {
+    let restore = store::restore(Path::new(&path), &hash).map_err(|e| e.to_string())?;
+    Ok(restore.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -86,7 +112,9 @@ pub fn run() {
             add_project,
             remove_project,
             get_history,
-            make_commit
+            make_commit,
+            diff_snapshots,
+            restore_snapshot
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
