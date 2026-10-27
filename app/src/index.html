@@ -11,15 +11,19 @@
   <body>
     <aside class="sidebar">
       <header class="sidebar-header">
-        <h1>VersionAble</h1>
+        <div class="sidebar-title">
+          <h1>VersionAble</h1>
+          <button id="close-switcher" class="icon-button" type="button" title="Close (Esc)">×</button>
+        </div>
         <button id="add-project" type="button">+ Add project</button>
       </header>
       <ul id="project-list" class="project-list"></ul>
-      <p id="error" class="error" hidden></p>
     </aside>
 
     <main id="detail" class="detail">
       <p class="placeholder">Select a project</p>
     </main>
+
+    <p id="error" class="error" hidden title="Click to dismiss"></p>
   </body>
 </html>

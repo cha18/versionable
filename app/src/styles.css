@@ -58,10 +58,12 @@ button {
   cursor: pointer;
 }
 
+/* The project list is an overlay ("switcher") so the app can stay a narrow panel. */
 .sidebar {
-  width: var(--sidebar-w, 260px);
-  flex-shrink: 0;
-  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
   flex-direction: column;
   background: var(--panel);
 }
@@ -71,8 +73,19 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+body.switcher-open .sidebar {
+  display: flex;
+}
+
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
 .sidebar-header h1 {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 15px;
   font-weight: 600;
 }
@@ -110,8 +123,27 @@ button {
   background: var(--bg);
 }
 
-.project.selected {
-  background: var(--accent-soft);
+/* The open project gets an accent bar, not a filled background, so it reads as
+   "current" rather than as a stuck hover or selection. */
+.project {
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.project.selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.project.selected .project-name {
+  color: var(--accent);
 }
 
 .project-label {
@@ -158,7 +190,13 @@ button {
 }
 
 .error {
-  margin: 8px;
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 60;
+  cursor: pointer;
+  margin: 0;
   padding: 8px 10px;
   border-radius: 6px;
   color: var(--danger);
@@ -169,9 +207,30 @@ button {
 .detail {
   flex: 1;
   display: flex;
-  flex-direction: column;
   min-width: 0;
   overflow: hidden;
+}
+
+/* If the window had to grow leftwards, the diff goes on the left so the panel stays put. */
+body.grow-left .detail {
+  flex-direction: row-reverse;
+}
+
+.panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body.expanded .panel {
+  flex: 0 0 var(--panel-w, 360px);
+  border-right: 1px solid var(--border);
+}
+
+body.expanded.grow-left .panel {
+  border-right: none;
+  border-left: 1px solid var(--border);
 }
 
 .placeholder {
@@ -186,15 +245,58 @@ button {
 .detail-header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px 24px 16px;
+  gap: 10px;
+  padding: 14px 16px 12px;
   border-bottom: 1px solid var(--border);
 }
 
 .title-row {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+}
+
+.title-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.title-text .muted {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title-text h2 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-button {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.icon-button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.icon-button[hidden] {
+  display: none;
 }
 
 .commit-form {
@@ -338,15 +440,9 @@ button {
 
 /* ---------- compare mode ---------- */
 
-.workspace {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-}
-
 .history-pane {
-  width: var(--history-w, 280px);
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -439,6 +535,19 @@ button {
 }
 
 .diff-pane {
+  display: none;
+  overflow: hidden;
+}
+
+body.expanded .diff-pane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-body {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -447,10 +556,18 @@ button {
   padding: 16px 20px 24px;
 }
 
+.close-diff {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 6;
+}
+
 .diff-header {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-right: 36px; /* room for the close button */
   margin-bottom: 14px;
 }
 
@@ -663,38 +780,6 @@ button {
   color: transparent;
 }
 
-/* ---------- resizable panes ---------- */
-
-.resizer {
-  position: relative;
-  flex-shrink: 0;
-  width: 1px;
-  background: var(--border);
-  cursor: col-resize;
-  touch-action: none;
-}
-
-/* a wider invisible grab area around the 1px line */
-.resizer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -4px;
-  right: -4px;
-  z-index: 5;
-}
-
-.resizer:hover,
-body.resizing .resizer {
-  background: var(--accent);
-}
-
-body.resizing {
-  cursor: col-resize;
-  user-select: none;
-}
-
 /* ---------- renaming ---------- */
 
 .editable-title {
@@ -812,4 +897,180 @@ body.resizing {
 
 .grid-line.beat {
   opacity: 0.3;
+}
+
+.compare-toggle {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.compare-toggle:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.compare-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.compare-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- filter chips ---------- */
+
+button.chip {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button.chip:hover {
+  border-color: currentColor;
+}
+
+/* An active filter chip is filled with its own colour. */
+button.chip.active {
+  color: #fff;
+  border-color: transparent;
+  background: var(--muted);
+}
+
+button.chip.added.active {
+  background: var(--added);
+}
+
+button.chip.modified.active {
+  background: var(--modified);
+  color: #1d1d1b;
+}
+
+button.chip.removed.active {
+  background: var(--removed);
+}
+
+.lane-row[hidden] {
+  display: none;
+}
+
+.arrangement[data-filter="added"] .clip:not([data-status="added"]),
+.arrangement[data-filter="modified"] .clip:not([data-status="modified"]),
+.arrangement[data-filter="removed"] .clip:not([data-status="removed"]),
+.arrangement[data-filter="unchanged"] .clip:not([data-status="unchanged"]) {
+  display: none;
+}
+
+/* ---------- focused clip ---------- */
+
+.clip.clickable {
+  cursor: pointer;
+}
+
+.clip.clickable:hover {
+  filter: brightness(1.08);
+}
+
+.arrangement.has-focus .clip:not(.focused) {
+  opacity: 0.18;
+}
+
+.clip.focused:not(.ghost) {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent);
+}
+
+.change-card {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.change-card[hidden] {
+  display: none;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-badge {
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+}
+
+.card-badge.added {
+  background: var(--added);
+}
+
+.card-badge.modified {
+  background: var(--modified);
+  color: #1d1d1b;
+}
+
+.card-badge.removed {
+  background: var(--removed);
+}
+
+.card-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-head .muted {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-close {
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+}
+
+.card-rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-rows dt {
+  color: var(--muted);
+}
+
+.card-rows dd {
+  margin: 0;
+}
+
+.card-rows .was {
+  color: var(--muted);
+  text-decoration: line-through;
 }
