@@ -212,7 +212,10 @@ async function renderHistory() {
   switcher.className = "icon-button switch-project";
   switcher.textContent = "☰";
   switcher.title = "Projects";
-  switcher.addEventListener("click", () => setSwitcherOpen(true));
+  switcher.addEventListener("click", () => {
+    if (picks.length > 0) clearPicks(); // close the diff; the window shrinks back to the panel
+    setSwitcherOpen(true);
+  });
   const titleText = document.createElement("div");
   titleText.className = "title-text";
   const title = document.createElement("h2");
@@ -1189,6 +1192,30 @@ listen("history-changed", (event) => {
 });
 
 document.querySelector("#add-project").addEventListener("click", addProject);
+// ---------- theme ----------
+// "system" follows macOS/Windows; "light" and "dark" override it.
+
+const THEMES = ["system", "light", "dark"];
+const THEME_ICONS = { system: "◐", light: "☀", dark: "☾" };
+let theme = THEMES.includes(loadPref("theme", "system")) ? loadPref("theme", "system") : "system";
+
+function applyTheme() {
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  const button = document.querySelector("#theme-toggle");
+  button.textContent = THEME_ICONS[theme];
+  button.title = `Theme: ${theme[0].toUpperCase()}${theme.slice(1)} (click to change)`;
+  // Match the native title bar too; null means "follow the system".
+  appWindow?.setTheme?.(theme === "system" ? null : theme).catch(() => {});
+}
+
+document.querySelector("#theme-toggle").addEventListener("click", () => {
+  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  savePref("theme", theme);
+  applyTheme();
+});
+applyTheme();
+
 document.querySelector("#close-switcher").addEventListener("click", () => setSwitcherOpen(false));
 errorEl.addEventListener("click", () => showError(""));
 setSwitcherOpen(true);

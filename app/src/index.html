@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>VersionAble</title>
     <link rel="stylesheet" href="styles.css" />
+    <script>
+      // Apply a saved light/dark choice before the first paint, so there's no flash.
+      try {
+        const theme = JSON.parse(localStorage.getItem("theme"));
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
     <script type="module" src="/main.js" defer></script>
   </head>
 
@@ -13,7 +20,10 @@
       <header class="sidebar-header">
         <div class="sidebar-title">
           <h1>VersionAble</h1>
-          <button id="close-switcher" class="icon-button" type="button" title="Close (Esc)">×</button>
+          <div class="sidebar-actions">
+            <button id="theme-toggle" class="icon-button" type="button"></button>
+            <button id="close-switcher" class="icon-button" type="button" title="Close (Esc)">×</button>
+          </div>
         </div>
         <button id="add-project" type="button">+ Add project</button>
       </header>
