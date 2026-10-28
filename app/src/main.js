@@ -249,7 +249,7 @@ async function renderHistory() {
   if (history.length === 0) {
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = "No saves recorded yet. Save the set in Ableton.";
+    empty.textContent = "No saves found. Is your .als file at this directory?";
     list.appendChild(empty);
   }
 
@@ -277,7 +277,9 @@ async function renderHistory() {
   const hint = document.createElement("p");
   hint.className = "hint";
   hint.textContent = "Click a save to see what changed. Click a second save to compare the two.";
-  historyPane.append(hint, list);
+  // The hint only makes sense once there's something to click.
+  if (history.length > 0) historyPane.append(hint);
+  historyPane.append(list);
 
   // The panel (header + history) never changes size or position when a diff opens;
   // the diff pane is added beside it and the window grows to fit.
