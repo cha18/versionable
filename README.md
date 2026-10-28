@@ -28,7 +28,7 @@ You may be warned that the app isn't from an identified developer:
 3. Type a name and click **Commit** to name a certain version.
 4. Click any version to see what changed. Click **Restore** to get it back.
 
-*Branches will be introduced in the next version*
+*Branches will be introduced soon*
 
 ---
 
