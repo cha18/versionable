@@ -60,9 +60,9 @@ fn add_project(app: AppHandle, path: String) -> Result<Vec<String>, String> {
         Err("Project already exists".to_string())
     } else {
         projects.push(path.clone());
-        watcher::watch_folder(&app, Path::new(&path));
         versionable_core::store::snapshot(Path::new(&path)).map_err(|e| e.to_string())?;
         save_projects(&app, &projects)?;
+        watcher::watch_folder(&app, Path::new(&path));
         Ok(projects)
     }
 }

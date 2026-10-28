@@ -249,7 +249,7 @@ async function renderHistory() {
   if (history.length === 0) {
     const empty = document.createElement("li");
     empty.className = "empty";
-    empty.textContent = "No saves found. Is your .als file at this directory?";
+    empty.textContent = "No saves found. Is your .als file still at this directory?";
     list.appendChild(empty);
   }
 
