@@ -204,6 +204,7 @@ mod tests {
 
         let entry = snapshot(&als).unwrap();
         let hash = &entry.as_ref().unwrap().hash;
+        assert!(restore(&als, "abc").is_err());
         let b = restore(&als, hash).unwrap();
         assert_eq!(
             b,

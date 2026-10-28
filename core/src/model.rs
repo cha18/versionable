@@ -13,7 +13,7 @@ pub struct Track {
     pub clips: HashMap<u32, Clip>,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TrackKind {
     Midi,

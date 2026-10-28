@@ -240,14 +240,93 @@ pub fn diff(old: &Project, new: &Project) -> Diff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::*;
+    use crate::{
+        diff::Status::{Modified, Removed, Unchanged},
+        parse::*,
+    };
     use std::path::Path;
 
+    fn clip(start: f64, end: f64) -> Clip {
+        Clip {
+            start,
+            end,
+            loop_start: 0.0,
+            loop_end: end - start,
+            name: "Bass".to_string(),
+            color: 5,
+        }
+    }
+
     #[test]
-    fn diff_fixtures() {
+    fn diff_against_self() {
         let p1 = parse_als(Path::new("../fixtures/song1/01-original.als")).unwrap();
         let p2 = parse_als(Path::new("../fixtures/song1/01-original.als")).unwrap();
-        let p = diff(&p1, &p2);
-        println!("{:#?}", p);
+        let diff = diff(&p1, &p2);
+        let diff_summary = diff.summary;
+        assert_eq!(diff_summary.clips_added, 0);
+        assert_eq!(diff_summary.clips_removed, 0);
+        assert_eq!(diff_summary.clips_modified, 0);
+        assert_eq!(diff_summary.clips_unchanged, 3);
+        assert_eq!(diff_summary.tracks_added, 0);
+        assert_eq!(diff_summary.tracks_removed, 0);
+        assert_eq!(diff_summary.tracks_modified, 0);
+    }
+
+    #[test]
+    fn renumbered_clip_is_unchanged() {
+        let mut summary = DiffSummary::default();
+        let result = diff_clips(
+            &HashMap::from([(3, clip(0.0, 16.0))]),
+            &HashMap::from([(7, clip(0.0, 16.0))]),
+            &mut summary,
+        );
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].status, Unchanged);
+        assert!(result[0].changed.is_empty());
+        assert_eq!(summary.clips_unchanged, 1);
+        assert_eq!(summary.clips_added, 0);
+        assert_eq!(summary.clips_modified, 0);
+        assert_eq!(summary.clips_removed, 0);
+    }
+
+    #[test]
+    fn renumbered_and_moved_clip_is_modified() {
+        let mut summary = DiffSummary::default();
+        let result = diff_clips(
+            &HashMap::from([(3, clip(0.0, 16.0))]),
+            &HashMap::from([(7, clip(32.0, 48.0))]),
+            &mut summary,
+        );
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].status, Modified);
+        assert_eq!(result[0].changed, vec!["start", "end"]);
+        assert_eq!(summary.clips_unchanged, 0);
+        assert_eq!(summary.clips_added, 0);
+        assert_eq!(summary.clips_modified, 1);
+        assert_eq!(summary.clips_removed, 0);
+    }
+
+    #[test]
+    fn renumbered_different_clip_is_not_matched() {
+        let mut summary = DiffSummary::default();
+        let result = diff_clips(
+            &HashMap::from([(3, clip(0.0, 16.0))]),
+            &HashMap::from([(
+                7,
+                Clip {
+                    name: "Lead".into(),
+                    ..clip(0.0, 16.0)
+                },
+            )]),
+            &mut summary,
+        );
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].status, Removed);
+        assert!(result[0].changed.is_empty());
+        assert_eq!(summary.clips_unchanged, 0);
+        assert_eq!(summary.clips_added, 1);
+        assert_eq!(summary.clips_modified, 0);
+        assert_eq!(summary.clips_removed, 1);
     }
 }

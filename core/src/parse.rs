@@ -113,10 +113,76 @@ pub fn parse_als(path: &Path) -> anyhow::Result<Project> {
 
 #[cfg(test)]
 mod tests {
+
+    use crate::model::TrackKind::{Audio, Group, Midi, Return};
+
     use super::*;
+
+    fn track(p: &Project, id: u32) -> &Track {
+        p.0.iter().find(|t| t.id == id).expect("track not found")
+    }
+
     #[test]
-    fn prints_fixture() {
+    fn parses_tracks_in_order() {
         let p = parse_als(Path::new("../fixtures/song1/01-original.als")).unwrap();
-        println!("{:#?}", p);
+
+        assert_eq!(
+            p.0.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            vec![
+                "1-Basic Analog Bass",
+                "2-Saw Complex Bass",
+                "3-Audio",
+                "4-Audio",
+                "5-Badass Lead",
+                "A-Reverb",
+                "B-Delay"
+            ]
+        );
+        //assert track kinds
+        assert_eq!(
+            p.0.iter().map(|t| &t.kind).collect::<Vec<_>>(),
+            vec![&Midi, &Midi, &Audio, &Audio, &Midi, &Return, &Return]
+        );
+        //assert no groups in project
+        assert_eq!(
+            p.0.iter()
+                .filter(|t| t.group_id.is_some())
+                .collect::<Vec<_>>()
+                .len(),
+            0
+        )
+    }
+
+    #[test]
+    fn parses_clip_positions() {
+        let p = parse_als(Path::new("../fixtures/song1/01-original.als")).unwrap();
+
+        //assert track with id 12 has exactly one clip with the following features
+        let bass_track = track(&p, 12);
+        assert_eq!(bass_track.clips.len(), 1);
+        let clip = &bass_track.clips[&9];
+        assert_eq!(clip.name, "Basic Analog Bass");
+        assert_eq!(clip.start, 0.0);
+        assert_eq!(clip.end, 32.0);
+        assert_eq!(clip.color, 24);
+
+        //assert track with id 8 has no clips
+        assert!(track(&p, 8).clips.is_empty());
+        //assert two tracks can have the same clip id
+        assert!(track(&p, 13).clips.contains_key(&1) && track(&p, 15).clips.contains_key(&1))
+    }
+
+    #[test]
+    fn parses_group_membership() {
+        let p = parse_als(Path::new("../fixtures/song1/04-original-recoloured.als")).unwrap();
+
+        //assert track with id 19 is of type group
+        assert!(matches!(track(&p, 19).kind, Group));
+
+        //assert track with id 8 has a group id of None
+        assert!(matches!(track(&p, 8).group_id, None));
+
+        assert_eq!(track(&p, 12).group_id, Some(19));
+        assert_eq!(track(&p, 13).group_id, Some(19));
     }
 }

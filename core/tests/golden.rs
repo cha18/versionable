@@ -4,8 +4,10 @@ use versionable_core::{diff::diff, parse::parse_als};
 
 #[test]
 fn golden() {
+    let mut pairs = 0;
     let fixtures_dir = Path::new("../fixtures");
-    for entry in fs::read_dir(fixtures_dir).unwrap().flatten() {
+    let entries = fs::read_dir(fixtures_dir).unwrap().flatten();
+    for entry in entries {
         let song_dir = entry.path();
         if !song_dir.is_dir() {
             continue;
@@ -32,7 +34,9 @@ fn golden() {
             let expected: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(&expected_json).unwrap()).unwrap();
 
-            pretty_assertions::assert_eq!(actual, expected)
+            pretty_assertions::assert_eq!(actual, expected);
+            pairs += 1;
         }
     }
+    assert!(pairs > 0, "golden test compared no fixture pairs");
 }
