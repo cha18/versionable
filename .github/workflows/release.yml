@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]                 # only tags starting with v, e.g. v0.1.0
+
+jobs:
+  build:
+    permissions:
+      contents: write            # it needs to create a GitHub release
+    strategy:
+      fail-fast: false           # one platform failing shouldn't cancel the others
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin   # Apple Silicon
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin    # Intel (cross-compiled on the ARM runner)
+          - platform: windows-latest
+            args: ''
+    runs-on: ${{ matrix.platform }}   # the job runs once per matrix entry
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # Both Mac targets on macOS runners, nothing extra on Windows.
+      # (GitHub expressions have no if/else, so `cond && a || b` stands in for one.)
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      - run: npm ci              # installs the Tauri CLI from package-lock.json
+        working-directory: app
+
+      # Builds the installers and uploads them to a draft release named after the tag.
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: VersionAble ${{ github.ref_name }}
+          releaseBody: |
+            Download the installer for your system below.
+            macOS: Apple Silicon is `aarch64`, Intel is `x64`. Windows: the `.msi` or `-setup.exe`.
+            The app is unsigned. See the README for how to open it the first time.
+          releaseDraft: true     # nothing is public until you've tested it and clicked Publish
+          prerelease: false
+          args: ${{ matrix.args }}

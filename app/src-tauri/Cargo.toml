@@ -1,5 +1,5 @@
 [package]
-name = "VersionAble"
+name = "versionable"
 version = "0.1.0"
 description = "Ableton Version Control"
 authors = ["Chanuk"]

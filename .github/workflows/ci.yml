@@ -1,0 +1,15 @@
+name: CI                      # the name shown in GitHub's Actions tab
+
+on: [push, pull_request]      # when it runs: every push, and every PR
+
+jobs:
+  test:                       # one job, called "test"
+    runs-on: ubuntu-latest    # a fresh Linux machine, thrown away afterwards
+    steps:
+      - uses: actions/checkout@v4          # clone your repo onto that machine
+      - uses: dtolnay/rust-toolchain@stable # install Rust
+      - uses: Swatinem/rust-cache@v2        # reuse compiled dependencies between runs
+        with:
+          workspaces: core
+      - run: cargo test                     # a plain shell command
+        working-directory: core
