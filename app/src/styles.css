@@ -246,7 +246,8 @@ body.grow-left .detail {
 }
 
 body.expanded .panel {
-  flex: 0 0 var(--panel-w, 360px);
+  flex: 0 0 var(--panel-w, 380px);
+  max-width: 50%; /* the diff always gets at least half, whatever the window size */
   border-right: 1px solid var(--border);
 }
 

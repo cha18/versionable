@@ -572,7 +572,13 @@ const { getCurrentWindow, currentMonitor, PhysicalSize, PhysicalPosition } = win
 const appWindow = getCurrentWindow?.();
 const layout = loadPref("layout", { diffWidth: 900 }); // CSS px, remembered across launches
 let expanded = false;
-let panelWidth = window.innerWidth; // the narrow width to return to
+// A window at least this wide (CSS px) already has room for the diff, so it's split in
+// place instead of resized. This also covers maximised and full-screen windows.
+const ROOMY_WIDTH = 760;
+const DEFAULT_PANEL_WIDTH = 380;
+// The panel's width while narrow: the size to return to, and the panel's width beside the diff.
+let panelWidth = window.innerWidth < ROOMY_WIDTH ? window.innerWidth : DEFAULT_PANEL_WIDTH;
+let resizedForDiff = false; // whether expanding grew the window (and collapsing should shrink it)
 let grewLeft = false; // the diff opened on the left, so collapsing keeps the right edge
 let ignoreResizeUntil = 0;
 let windowJob = Promise.resolve(); // window changes run in order, never overlapping
@@ -580,7 +586,10 @@ let windowJob = Promise.resolve(); // window changes run in order, never overlap
 function setExpanded(next) {
   if (next === expanded) return;
   expanded = next;
-  if (next) panelWidth = window.innerWidth;
+  if (next) {
+    resizedForDiff = window.innerWidth < ROOMY_WIDTH;
+    if (resizedForDiff) panelWidth = window.innerWidth;
+  }
   document.documentElement.style.setProperty("--panel-w", `${panelWidth}px`);
   // Collapsing: hide the diff first, then shrink. Expanding: grow first, then show it,
   // so the diff (and its close button) never appears squeezed inside the narrow panel.
@@ -592,7 +601,7 @@ function setExpanded(next) {
     setTimeout(() => reject(new Error("timed out")), 1500),
   );
   windowJob = windowJob
-    .then(() => Promise.race([resizeWindow(next), timeout]))
+    .then(() => (resizedForDiff ? Promise.race([resizeWindow(next), timeout]) : undefined))
     .catch((e) => {
       console.warn("window resize:", e);
       showError(`Couldn't resize the window: ${e}`);
@@ -657,13 +666,17 @@ async function resizeWindow(next) {
     }
     grewLeft = false;
     document.body.classList.remove("grow-left");
+    resizedForDiff = false;
   }
 }
 
 // Remember how wide the user likes the diff, if they resize the expanded window.
 let saveLayoutTimer = 0;
 window.addEventListener("resize", () => {
-  if (!expanded || Date.now() < ignoreResizeUntil) return;
+  if (Date.now() < ignoreResizeUntil) return;
+  // While narrow, the user's own width is the panel width to come back to.
+  if (!expanded && window.innerWidth < ROOMY_WIDTH) panelWidth = window.innerWidth;
+  if (!expanded || !resizedForDiff) return;
   layout.diffWidth = Math.max(420, window.innerWidth - panelWidth);
   clearTimeout(saveLayoutTimer);
   saveLayoutTimer = setTimeout(() => savePref("layout", layout), 300);
