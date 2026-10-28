@@ -147,12 +147,13 @@ function render(projects) {
       e.stopPropagation();
       if (path === selectedPath) select(null);
       render(await call("remove_project", { path }));
+      if (!selectedPath) renderHistory(); // the empty state depends on how many projects are left
     });
 
     // Update the highlight in place rather than re-rendering, so the row under the
     // pointer survives and a double-click on the name still registers.
     item.addEventListener("click", () => {
-      if (path === selectedPath) return;
+      if (path === selectedPath) return setSwitcherOpen(false); // already open: just go back to it
       for (const other of listEl.children) other.classList.toggle("selected", other === item);
       select(path);
     });
@@ -164,6 +165,7 @@ function render(projects) {
 
 function select(path) {
   selectedPath = path;
+  savePref("lastProject", path); // reopened on the next launch
   picks = [];
   setExpanded(false);
   setSwitcherOpen(path === null);
@@ -171,12 +173,75 @@ function select(path) {
 }
 
 // ---------- project switcher ----------
-// The project list is an overlay, so the app can stay a narrow panel beside Ableton.
+// The open project is the home screen. The project list is an overlay opened from ☰,
+// so the app can stay a narrow panel beside Ableton.
 
 function setSwitcherOpen(open) {
-  // With nothing selected there's nothing behind the list, so keep it open.
-  document.body.classList.toggle("switcher-open", open || selectedPath === null);
-  document.querySelector("#close-switcher").hidden = selectedPath === null;
+  document.body.classList.toggle("switcher-open", open);
+  document.querySelector(".switch-project")?.setAttribute("aria-expanded", String(open));
+}
+
+function buildSwitcherButton() {
+  const switcher = document.createElement("button");
+  switcher.type = "button";
+  switcher.className = "icon-button switch-project";
+  switcher.textContent = "☰";
+  switcher.title = "Projects";
+  // Stays visible above the open list (see styles.css), so the same button closes it.
+  switcher.setAttribute("aria-expanded", String(document.body.classList.contains("switcher-open")));
+  switcher.addEventListener("click", () => {
+    const open = !document.body.classList.contains("switcher-open");
+    if (open && picks.length > 0) clearPicks(); // close the diff; the window shrinks back to the panel
+    setSwitcherOpen(open);
+  });
+  return switcher;
+}
+
+// Shown when no project is open: on first run, or after removing the open project.
+function buildEmptyState() {
+  const header = document.createElement("header");
+  header.className = "detail-header";
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
+  const titleText = document.createElement("div");
+  titleText.className = "title-text";
+  const title = document.createElement("h2");
+  title.textContent = "No project open";
+  titleText.append(title);
+  titleRow.append(buildSwitcherButton(), titleText);
+  header.append(titleRow);
+
+  const body = document.createElement("div");
+  body.className = "empty-state";
+  const firstRun = lastProjects.length === 0;
+  const heading = document.createElement("p");
+  heading.className = "empty-state-title";
+  heading.textContent = firstRun ? "Add your first Ableton set" : "Pick a project to see its history";
+  const hint = document.createElement("p");
+  hint.className = "muted";
+  hint.textContent = firstRun
+    ? "VersionAble keeps every save, so you can compare and restore versions."
+    : "Or add a new Ableton set.";
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "primary-button";
+  add.textContent = "+ Add project";
+  add.addEventListener("click", addProject);
+  body.append(heading, hint);
+  if (!firstRun) {
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.className = "primary-button";
+    choose.textContent = "Choose a project";
+    choose.addEventListener("click", () => setSwitcherOpen(true));
+    body.append(choose);
+  }
+  body.append(add);
+
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.append(header, body);
+  return panel;
 }
 
 function formatTime(ms) {
@@ -190,10 +255,7 @@ function formatTime(ms) {
 async function renderHistory() {
   detailEl.innerHTML = "";
   if (!selectedPath) {
-    const p = document.createElement("p");
-    p.className = "placeholder";
-    p.textContent = "Select a project";
-    detailEl.appendChild(p);
+    detailEl.append(buildEmptyState());
     return;
   }
 
@@ -207,15 +269,7 @@ async function renderHistory() {
   header.className = "detail-header";
   const titleRow = document.createElement("div");
   titleRow.className = "title-row";
-  const switcher = document.createElement("button");
-  switcher.type = "button";
-  switcher.className = "icon-button switch-project";
-  switcher.textContent = "☰";
-  switcher.title = "Projects";
-  switcher.addEventListener("click", () => {
-    if (picks.length > 0) clearPicks(); // close the diff; the window shrinks back to the panel
-    setSwitcherOpen(true);
-  });
+  const switcher = buildSwitcherButton();
   const titleText = document.createElement("div");
   titleText.className = "title-text";
   const title = document.createElement("h2");
@@ -1231,7 +1285,12 @@ document.querySelector("#theme-toggle").addEventListener("click", () => {
 });
 applyTheme();
 
-document.querySelector("#close-switcher").addEventListener("click", () => setSwitcherOpen(false));
 errorEl.addEventListener("click", () => showError(""));
-setSwitcherOpen(true);
-call("list_projects").then(render);
+
+// Start in the project you last had open, if it's still tracked.
+call("list_projects").then((projects) => {
+  render(projects);
+  const last = loadPref("lastProject", null);
+  if (projects?.includes(last)) select(last);
+  else renderHistory(); // empty state
+});

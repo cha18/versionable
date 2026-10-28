@@ -99,6 +99,28 @@ body.switcher-open .sidebar {
   display: flex;
 }
 
+/* The ☰ button stays above the open list, in the same spot, so it reads as a toggle. */
+body.switcher-open .switch-project {
+  position: relative;
+  z-index: 51;
+}
+
+.switch-project[aria-expanded="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Leave room for the ☰ and line the title up with it (detail header: 14px top, 16px left,
+   then the two-line title row). */
+body:has(.switch-project) .sidebar-header {
+  padding-top: 14px;
+}
+
+body:has(.switch-project) .sidebar-title {
+  min-height: 36px;
+  padding-left: 38px;
+}
+
 .sidebar-title {
   display: flex;
   align-items: center;
@@ -259,6 +281,41 @@ body.expanded.grow-left .panel {
 .placeholder {
   margin: auto;
   color: var(--muted);
+}
+
+/* No project open: first run, or the open project was removed. */
+.empty-state {
+  margin: auto;
+  padding: 24px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.empty-state-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.empty-state .muted {
+  margin-bottom: 8px;
+}
+
+.primary-button {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.primary-button:hover {
+  border-color: var(--accent);
 }
 
 .muted {
