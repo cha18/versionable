@@ -1,16 +1,16 @@
 # VersionAble
 
-**Never lose a good idea in Ableton again.**
+**Never lose an idea in Ableton again.**
 
-VersionAble sits beside Ableton and quietly keeps every version of your project. Jump back to how the track sounded yesterday, or see exactly what you changed since then.
+VersionAble sits beside Ableton and keeps every version of your project. Jump back to how the track sounded yesterday, or see exactly what you changed since then.
 
 ![VersionAble beside Ableton](docs/screenshot.png)
 
 ## What it does
 
-- **Saves every version for you.** Just press ⌘S / Ctrl+S in Ableton as usual.
-- **Lets you bookmark the good moments.** Give a version a name like "drop finally works".
-- **Shows what changed.** Pick two versions and see your arrangement side by side. New clips are green, removed clips are red, and changed clips are orange.
+- **Saves every version.**  Press ⌘S / Ctrl+S in Ableton as usual and it will be tracked in versionable.
+- **Lets you bookmark versions.** Give a version a name like "drop finally works".
+- **Shows what changed between versions.** Pick two versions and see your arrangement side by side. New clips are green, removed clips are red, and changed clips are orange.
 - **Gets old versions back safely.** Restore any version as a new file next to your project. Your current set is never touched.
 
 ## Download
